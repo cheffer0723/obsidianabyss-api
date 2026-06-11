@@ -15,4 +15,11 @@ npm run dev
 - `POST /contact`
 - `POST /wallet-beta-request`
 
+## Database
+
+Set `DATABASE_URL` to a Postgres connection string. The API creates these tables automatically on startup:
+
+- `contact_requests`
+- `wallet_beta_requests`
+
 This first backend stores no wallet secrets, performs no wallet signatures, and has no trading permissions.

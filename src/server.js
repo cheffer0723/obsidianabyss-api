@@ -3,6 +3,12 @@ import express from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
 import { z } from 'zod';
+import {
+  createContactRequest,
+  createWalletBetaRequest,
+  initializeDatabase,
+  isDatabaseConfigured
+} from './db.js';
 
 const app = express();
 const port = Number(process.env.PORT || 3001);
@@ -64,44 +70,50 @@ app.get('/health', (_req, res) => {
   res.json({
     ok: true,
     service: 'obsidianabyss-api',
+    database: {
+      configured: isDatabaseConfigured()
+    },
     timestamp: new Date().toISOString()
   });
 });
 
-app.post('/contact', (req, res) => {
+app.post('/contact', async (req, res, next) => {
   const result = validate(contactSchema, req.body);
   if (result.error) {
     res.status(400).json({ ok: false, errors: result.error });
     return;
   }
 
-  // TODO: Wire this to email or a database once the provider is selected.
-  res.status(202).json({
-    ok: true,
-    message: 'Contact request accepted.',
-    request: {
-      name: result.data.name,
-      email: result.data.email
-    }
-  });
+  try {
+    const request = await createContactRequest(result.data);
+    res.status(201).json({
+      ok: true,
+      message: 'Contact request saved.',
+      request
+    });
+  } catch (error) {
+    next(error);
+  }
 });
 
-app.post('/wallet-beta-request', (req, res) => {
+app.post('/wallet-beta-request', async (req, res, next) => {
   const result = validate(walletBetaSchema, req.body);
   if (result.error) {
     res.status(400).json({ ok: false, errors: result.error });
     return;
   }
 
-  // This endpoint does not request signatures, custody assets, or execute trades.
-  res.status(202).json({
-    ok: true,
-    message: 'Wallet beta request accepted.',
-    request: {
-      name: result.data.name,
-      email: result.data.email
-    }
-  });
+  try {
+    // This endpoint does not request signatures, custody assets, or execute trades.
+    const request = await createWalletBetaRequest(result.data);
+    res.status(201).json({
+      ok: true,
+      message: 'Wallet beta request saved.',
+      request
+    });
+  } catch (error) {
+    next(error);
+  }
 });
 
 app.use((_req, res) => {
@@ -114,8 +126,16 @@ app.use((err, _req, res, _next) => {
     return;
   }
 
+  if (err.statusCode) {
+    res.status(err.statusCode).json({ ok: false, error: err.message });
+    return;
+  }
+
+  console.error(err);
   res.status(500).json({ ok: false, error: 'Internal server error' });
 });
+
+await initializeDatabase();
 
 app.listen(port, () => {
   console.log(`obsidianabyss-api listening on ${port}`);
