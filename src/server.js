@@ -2,12 +2,15 @@ import 'dotenv/config';
 import express from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
+import rateLimit from 'express-rate-limit';
 import { z } from 'zod';
 import {
   createContactRequest,
   createWalletBetaRequest,
   initializeDatabase,
-  isDatabaseConfigured
+  isDatabaseConfigured,
+  listContactRequests,
+  listWalletBetaRequests
 } from './db.js';
 
 const app = express();
@@ -22,8 +25,20 @@ const allowedOrigins = (process.env.ALLOWED_ORIGINS || defaultAllowedOrigins.joi
   .split(',')
   .map((origin) => origin.trim())
   .filter(Boolean);
+const adminToken = process.env.ADMIN_TOKEN;
+const submissionLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 12,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: {
+    ok: false,
+    error: 'Too many requests. Please try again later.'
+  }
+});
 
 app.disable('x-powered-by');
+app.set('trust proxy', 1);
 app.use(helmet());
 app.use(express.json({ limit: '32kb' }));
 app.use(
@@ -42,14 +57,20 @@ app.use(
 const contactSchema = z.object({
   name: z.string().trim().min(1).max(120),
   email: z.string().trim().email().max(254),
-  message: z.string().trim().min(1).max(4000)
+  message: z.string().trim().min(1).max(4000),
+  company: z.string().trim().max(0).optional().or(z.literal(''))
 });
 
 const walletBetaSchema = z.object({
   name: z.string().trim().min(1).max(120),
   email: z.string().trim().email().max(254),
   walletAddress: z.string().trim().max(160).optional().or(z.literal('')),
-  notes: z.string().trim().max(2000).optional().or(z.literal(''))
+  notes: z.string().trim().max(2000).optional().or(z.literal('')),
+  company: z.string().trim().max(0).optional().or(z.literal(''))
+});
+
+const adminListSchema = z.object({
+  limit: z.coerce.number().int().min(1).max(200).default(50)
 });
 
 function validate(schema, payload) {
@@ -73,11 +94,14 @@ app.get('/health', (_req, res) => {
     database: {
       configured: isDatabaseConfigured()
     },
+    admin: {
+      configured: Boolean(adminToken)
+    },
     timestamp: new Date().toISOString()
   });
 });
 
-app.post('/contact', async (req, res, next) => {
+app.post('/contact', submissionLimiter, async (req, res, next) => {
   const result = validate(contactSchema, req.body);
   if (result.error) {
     res.status(400).json({ ok: false, errors: result.error });
@@ -96,7 +120,7 @@ app.post('/contact', async (req, res, next) => {
   }
 });
 
-app.post('/wallet-beta-request', async (req, res, next) => {
+app.post('/wallet-beta-request', submissionLimiter, async (req, res, next) => {
   const result = validate(walletBetaSchema, req.body);
   if (result.error) {
     res.status(400).json({ ok: false, errors: result.error });
@@ -111,6 +135,36 @@ app.post('/wallet-beta-request', async (req, res, next) => {
       message: 'Wallet beta request saved.',
       request
     });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.get('/admin/contact-requests', requireAdmin, async (req, res, next) => {
+  const result = validate(adminListSchema, req.query);
+  if (result.error) {
+    res.status(400).json({ ok: false, errors: result.error });
+    return;
+  }
+
+  try {
+    const requests = await listContactRequests({ limit: result.data.limit });
+    res.json({ ok: true, requests });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.get('/admin/wallet-beta-requests', requireAdmin, async (req, res, next) => {
+  const result = validate(adminListSchema, req.query);
+  if (result.error) {
+    res.status(400).json({ ok: false, errors: result.error });
+    return;
+  }
+
+  try {
+    const requests = await listWalletBetaRequests({ limit: result.data.limit });
+    res.json({ ok: true, requests });
   } catch (error) {
     next(error);
   }
@@ -140,3 +194,19 @@ await initializeDatabase();
 app.listen(port, () => {
   console.log(`obsidianabyss-api listening on ${port}`);
 });
+
+function requireAdmin(req, res, next) {
+  if (!adminToken) {
+    res.status(503).json({ ok: false, error: 'Admin access is not configured' });
+    return;
+  }
+
+  const header = req.get('authorization') || '';
+  const token = header.startsWith('Bearer ') ? header.slice(7) : '';
+  if (token !== adminToken) {
+    res.status(401).json({ ok: false, error: 'Unauthorized' });
+    return;
+  }
+
+  next();
+}

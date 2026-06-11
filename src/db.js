@@ -70,6 +70,38 @@ export async function createWalletBetaRequest({ name, email, walletAddress, note
   return result.rows[0];
 }
 
+export async function listContactRequests({ limit = 50 } = {}) {
+  assertDatabaseConfigured();
+
+  const result = await pool.query(
+    `
+      SELECT id, name, email, message, created_at
+      FROM contact_requests
+      ORDER BY created_at DESC
+      LIMIT $1;
+    `,
+    [limit]
+  );
+
+  return result.rows;
+}
+
+export async function listWalletBetaRequests({ limit = 50 } = {}) {
+  assertDatabaseConfigured();
+
+  const result = await pool.query(
+    `
+      SELECT id, name, email, wallet_address, notes, created_at
+      FROM wallet_beta_requests
+      ORDER BY created_at DESC
+      LIMIT $1;
+    `,
+    [limit]
+  );
+
+  return result.rows;
+}
+
 function assertDatabaseConfigured() {
   if (!pool) {
     const error = new Error('Database is not configured');

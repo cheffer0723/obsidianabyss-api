@@ -14,6 +14,14 @@ npm run dev
 - `GET /health`
 - `POST /contact`
 - `POST /wallet-beta-request`
+- `GET /admin/contact-requests`
+- `GET /admin/wallet-beta-requests`
+
+Admin endpoints require:
+
+```http
+Authorization: Bearer <ADMIN_TOKEN>
+```
 
 ## Database
 
