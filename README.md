@@ -16,12 +16,21 @@ npm run dev
 - `POST /wallet-beta-request`
 - `GET /admin/contact-requests`
 - `GET /admin/wallet-beta-requests`
+- `PATCH /admin/contact-requests/:id/status`
+- `PATCH /admin/wallet-beta-requests/:id/status`
 
 Admin endpoints require:
 
 ```http
 Authorization: Bearer <ADMIN_TOKEN>
 ```
+
+Request statuses:
+
+- `new`
+- `reviewed`
+- `accepted`
+- `rejected`
 
 ## Database
 

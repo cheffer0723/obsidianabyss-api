@@ -10,7 +10,9 @@ import {
   initializeDatabase,
   isDatabaseConfigured,
   listContactRequests,
-  listWalletBetaRequests
+  listWalletBetaRequests,
+  updateContactRequestStatus,
+  updateWalletBetaRequestStatus
 } from './db.js';
 import {
   isMailConfigured,
@@ -76,6 +78,12 @@ const walletBetaSchema = z.object({
 
 const adminListSchema = z.object({
   limit: z.coerce.number().int().min(1).max(200).default(50)
+});
+const adminStatusSchema = z.object({
+  status: z.enum(['new', 'reviewed', 'accepted', 'rejected'])
+});
+const idParamSchema = z.object({
+  id: z.coerce.number().int().positive()
 });
 
 function validate(schema, payload) {
@@ -173,6 +181,30 @@ app.get('/admin/contact-requests', requireAdmin, async (req, res, next) => {
   }
 });
 
+app.patch('/admin/contact-requests/:id/status', requireAdmin, async (req, res, next) => {
+  const params = validate(idParamSchema, req.params);
+  const body = validate(adminStatusSchema, req.body);
+  if (params.error || body.error) {
+    res.status(400).json({ ok: false, errors: [...(params.error || []), ...(body.error || [])] });
+    return;
+  }
+
+  try {
+    const request = await updateContactRequestStatus({
+      id: params.data.id,
+      status: body.data.status
+    });
+    if (!request) {
+      res.status(404).json({ ok: false, error: 'Contact request not found' });
+      return;
+    }
+
+    res.json({ ok: true, request });
+  } catch (error) {
+    next(error);
+  }
+});
+
 app.get('/admin/wallet-beta-requests', requireAdmin, async (req, res, next) => {
   const result = validate(adminListSchema, req.query);
   if (result.error) {
@@ -183,6 +215,30 @@ app.get('/admin/wallet-beta-requests', requireAdmin, async (req, res, next) => {
   try {
     const requests = await listWalletBetaRequests({ limit: result.data.limit });
     res.json({ ok: true, requests });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.patch('/admin/wallet-beta-requests/:id/status', requireAdmin, async (req, res, next) => {
+  const params = validate(idParamSchema, req.params);
+  const body = validate(adminStatusSchema, req.body);
+  if (params.error || body.error) {
+    res.status(400).json({ ok: false, errors: [...(params.error || []), ...(body.error || [])] });
+    return;
+  }
+
+  try {
+    const request = await updateWalletBetaRequestStatus({
+      id: params.data.id,
+      status: body.data.status
+    });
+    if (!request) {
+      res.status(404).json({ ok: false, error: 'Wallet beta request not found' });
+      return;
+    }
+
+    res.json({ ok: true, request });
   } catch (error) {
     next(error);
   }

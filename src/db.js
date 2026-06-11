@@ -24,8 +24,20 @@ export async function initializeDatabase() {
       name TEXT NOT NULL,
       email TEXT NOT NULL,
       message TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'new',
+      status_updated_at TIMESTAMPTZ,
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
+  `);
+
+  await pool.query(`
+    ALTER TABLE contact_requests
+    ADD COLUMN IF NOT EXISTS status TEXT NOT NULL DEFAULT 'new';
+  `);
+
+  await pool.query(`
+    ALTER TABLE contact_requests
+    ADD COLUMN IF NOT EXISTS status_updated_at TIMESTAMPTZ;
   `);
 
   await pool.query(`
@@ -35,8 +47,20 @@ export async function initializeDatabase() {
       email TEXT NOT NULL,
       wallet_address TEXT,
       notes TEXT,
+      status TEXT NOT NULL DEFAULT 'new',
+      status_updated_at TIMESTAMPTZ,
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
+  `);
+
+  await pool.query(`
+    ALTER TABLE wallet_beta_requests
+    ADD COLUMN IF NOT EXISTS status TEXT NOT NULL DEFAULT 'new';
+  `);
+
+  await pool.query(`
+    ALTER TABLE wallet_beta_requests
+    ADD COLUMN IF NOT EXISTS status_updated_at TIMESTAMPTZ;
   `);
 }
 
@@ -75,7 +99,7 @@ export async function listContactRequests({ limit = 50 } = {}) {
 
   const result = await pool.query(
     `
-      SELECT id, name, email, message, created_at
+      SELECT id, name, email, message, status, status_updated_at, created_at
       FROM contact_requests
       ORDER BY created_at DESC
       LIMIT $1;
@@ -91,7 +115,7 @@ export async function listWalletBetaRequests({ limit = 50 } = {}) {
 
   const result = await pool.query(
     `
-      SELECT id, name, email, wallet_address, notes, created_at
+      SELECT id, name, email, wallet_address, notes, status, status_updated_at, created_at
       FROM wallet_beta_requests
       ORDER BY created_at DESC
       LIMIT $1;
@@ -100,6 +124,38 @@ export async function listWalletBetaRequests({ limit = 50 } = {}) {
   );
 
   return result.rows;
+}
+
+export async function updateContactRequestStatus({ id, status }) {
+  assertDatabaseConfigured();
+
+  const result = await pool.query(
+    `
+      UPDATE contact_requests
+      SET status = $2, status_updated_at = NOW()
+      WHERE id = $1
+      RETURNING id, status, status_updated_at;
+    `,
+    [id, status]
+  );
+
+  return result.rows[0] || null;
+}
+
+export async function updateWalletBetaRequestStatus({ id, status }) {
+  assertDatabaseConfigured();
+
+  const result = await pool.query(
+    `
+      UPDATE wallet_beta_requests
+      SET status = $2, status_updated_at = NOW()
+      WHERE id = $1
+      RETURNING id, status, status_updated_at;
+    `,
+    [id, status]
+  );
+
+  return result.rows[0] || null;
 }
 
 function assertDatabaseConfigured() {
