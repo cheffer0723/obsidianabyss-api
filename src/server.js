@@ -12,6 +12,11 @@ import {
   listContactRequests,
   listWalletBetaRequests
 } from './db.js';
+import {
+  isMailConfigured,
+  sendContactNotification,
+  sendWalletBetaNotification
+} from './mail.js';
 
 const app = express();
 const port = Number(process.env.PORT || 3001);
@@ -97,6 +102,9 @@ app.get('/health', (_req, res) => {
     admin: {
       configured: Boolean(adminToken)
     },
+    mail: {
+      configured: isMailConfigured()
+    },
     timestamp: new Date().toISOString()
   });
 });
@@ -110,10 +118,15 @@ app.post('/contact', submissionLimiter, async (req, res, next) => {
 
   try {
     const request = await createContactRequest(result.data);
+    const notification = await notifySafely(() =>
+      sendContactNotification({ request, submission: result.data })
+    );
+
     res.status(201).json({
       ok: true,
       message: 'Contact request saved.',
-      request
+      request,
+      notification
     });
   } catch (error) {
     next(error);
@@ -130,10 +143,15 @@ app.post('/wallet-beta-request', submissionLimiter, async (req, res, next) => {
   try {
     // This endpoint does not request signatures, custody assets, or execute trades.
     const request = await createWalletBetaRequest(result.data);
+    const notification = await notifySafely(() =>
+      sendWalletBetaNotification({ request, submission: result.data })
+    );
+
     res.status(201).json({
       ok: true,
       message: 'Wallet beta request saved.',
-      request
+      request,
+      notification
     });
   } catch (error) {
     next(error);
@@ -209,4 +227,13 @@ function requireAdmin(req, res, next) {
   }
 
   next();
+}
+
+async function notifySafely(sendNotification) {
+  try {
+    return await sendNotification();
+  } catch (error) {
+    console.error('Email notification failed:', error.message);
+    return { sent: false, reason: 'mail_send_failed' };
+  }
 }
