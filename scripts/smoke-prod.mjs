@@ -7,11 +7,16 @@ const SITE_URLS = [
   'https://obsidianabyss.com/',
   'https://www.obsidianabyss.com/',
   'https://obsidianabyss.com/admin.html',
-  'https://www.obsidianabyss.com/admin.html'
+  'https://www.obsidianabyss.com/admin.html',
+  'https://www.obsidianabyss.com/risk.html',
+  'https://www.obsidianabyss.com/privacy.html',
+  'https://www.obsidianabyss.com/terms.html',
+  'https://www.obsidianabyss.com/beta-disclaimer.html'
 ];
 const allowedOrigin = process.env.SMOKE_ORIGIN || 'https://obsidianabyss.com';
 const shouldSubmit = process.argv.includes('--submit');
 const shouldPatch = process.argv.includes('--patch-status');
+const shouldPatchNotes = process.argv.includes('--patch-admin-notes');
 const shouldCheckTestnet = process.argv.includes('--check-testnet-balance');
 const adminToken = process.env.ADMIN_TOKEN || (await readAdminToken());
 const results = [];
@@ -42,6 +47,17 @@ if (shouldSubmit) {
     await patchStatus(`/admin/contact-requests/${contact?.request?.id}/status`, 'contact status patch');
     await patchStatus(`/admin/wallet-beta-requests/${wallet?.request?.id}/status`, 'wallet status patch');
   }
+
+  if (shouldPatchNotes) {
+    await patchAdminNotes(
+      `/admin/contact-requests/${contact?.request?.id}/notes`,
+      'contact admin notes patch'
+    );
+    await patchAdminNotes(
+      `/admin/wallet-beta-requests/${wallet?.request?.id}/notes`,
+      'wallet admin notes patch'
+    );
+  }
 }
 
 printResults();
@@ -59,7 +75,7 @@ async function checkPages() {
       assert(body.includes('Obsidian Abyss'), 'missing Obsidian Abyss text');
       if (url.includes('admin.html')) {
         assert(body.includes('Obsidian Abyss Admin'), 'missing admin title');
-      } else {
+      } else if (url.endsWith('/')) {
         assert(body.includes(API_BASE), 'missing production API base');
       }
       return `${response.status} ${response.url}`;
@@ -181,6 +197,26 @@ async function patchStatus(pathname, label) {
     assert(body.ok === true, 'patch ok was not true');
     assert(body.request?.status === 'reviewed', 'status was not reviewed');
     return `request ${body.request.id} reviewed`;
+  });
+}
+
+async function patchAdminNotes(pathname, label) {
+  await record(label, async () => {
+    assert(adminToken, 'ADMIN_TOKEN missing');
+    assert(!pathname.includes('/undefined/'), 'missing submitted request id');
+    const body = await requestJson(`${API_BASE}${pathname}`, {
+      method: 'PATCH',
+      headers: {
+        Authorization: `Bearer ${adminToken}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        adminNotes: `Smoke-test admin note saved at ${new Date().toISOString()}.`
+      })
+    });
+    assert(body.ok === true, 'notes patch ok was not true');
+    assert(body.request?.admin_notes?.includes('Smoke-test admin note'), 'admin note was not saved');
+    return `request ${body.request.id} note saved`;
   });
 }
 

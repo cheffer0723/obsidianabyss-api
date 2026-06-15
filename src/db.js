@@ -30,6 +30,8 @@ export async function initializeDatabase() {
       preferred_assets TEXT,
       preferred_exchange TEXT,
       automation_comfort TEXT,
+      admin_notes TEXT,
+      notes_updated_at TIMESTAMPTZ,
       status TEXT NOT NULL DEFAULT 'new',
       status_updated_at TIMESTAMPTZ,
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
@@ -52,7 +54,9 @@ export async function initializeDatabase() {
     ADD COLUMN IF NOT EXISTS access_mode TEXT,
     ADD COLUMN IF NOT EXISTS preferred_assets TEXT,
     ADD COLUMN IF NOT EXISTS preferred_exchange TEXT,
-    ADD COLUMN IF NOT EXISTS automation_comfort TEXT;
+    ADD COLUMN IF NOT EXISTS automation_comfort TEXT,
+    ADD COLUMN IF NOT EXISTS admin_notes TEXT,
+    ADD COLUMN IF NOT EXISTS notes_updated_at TIMESTAMPTZ;
   `);
 
   await pool.query(`
@@ -66,6 +70,8 @@ export async function initializeDatabase() {
       preferred_assets TEXT,
       preferred_exchange TEXT,
       automation_comfort TEXT,
+      admin_notes TEXT,
+      notes_updated_at TIMESTAMPTZ,
       notes TEXT,
       status TEXT NOT NULL DEFAULT 'new',
       status_updated_at TIMESTAMPTZ,
@@ -89,7 +95,9 @@ export async function initializeDatabase() {
     ADD COLUMN IF NOT EXISTS access_mode TEXT,
     ADD COLUMN IF NOT EXISTS preferred_assets TEXT,
     ADD COLUMN IF NOT EXISTS preferred_exchange TEXT,
-    ADD COLUMN IF NOT EXISTS automation_comfort TEXT;
+    ADD COLUMN IF NOT EXISTS automation_comfort TEXT,
+    ADD COLUMN IF NOT EXISTS admin_notes TEXT,
+    ADD COLUMN IF NOT EXISTS notes_updated_at TIMESTAMPTZ;
   `);
 
   await pool.query(`
@@ -297,7 +305,7 @@ export async function listContactRequests({ limit = 50 } = {}) {
   const result = await pool.query(
     `
       SELECT id, name, email, message, status, status_updated_at, created_at
-      , experience_level, access_mode, preferred_assets, preferred_exchange, automation_comfort
+      , experience_level, access_mode, preferred_assets, preferred_exchange, automation_comfort, admin_notes, notes_updated_at
       FROM contact_requests
       ORDER BY created_at DESC
       LIMIT $1;
@@ -314,7 +322,7 @@ export async function listWalletBetaRequests({ limit = 50 } = {}) {
   const result = await pool.query(
     `
       SELECT id, name, email, wallet_address, notes, status, status_updated_at, created_at
-      , experience_level, access_mode, preferred_assets, preferred_exchange, automation_comfort
+      , experience_level, access_mode, preferred_assets, preferred_exchange, automation_comfort, admin_notes, notes_updated_at
       FROM wallet_beta_requests
       ORDER BY created_at DESC
       LIMIT $1;
@@ -352,6 +360,38 @@ export async function updateWalletBetaRequestStatus({ id, status }) {
       RETURNING id, status, status_updated_at;
     `,
     [id, status]
+  );
+
+  return result.rows[0] || null;
+}
+
+export async function updateContactRequestNotes({ id, adminNotes }) {
+  assertDatabaseConfigured();
+
+  const result = await pool.query(
+    `
+      UPDATE contact_requests
+      SET admin_notes = NULLIF($2, ''), notes_updated_at = NOW()
+      WHERE id = $1
+      RETURNING id, admin_notes, notes_updated_at;
+    `,
+    [id, adminNotes || '']
+  );
+
+  return result.rows[0] || null;
+}
+
+export async function updateWalletBetaRequestNotes({ id, adminNotes }) {
+  assertDatabaseConfigured();
+
+  const result = await pool.query(
+    `
+      UPDATE wallet_beta_requests
+      SET admin_notes = NULLIF($2, ''), notes_updated_at = NOW()
+      WHERE id = $1
+      RETURNING id, admin_notes, notes_updated_at;
+    `,
+    [id, adminNotes || '']
   );
 
   return result.rows[0] || null;

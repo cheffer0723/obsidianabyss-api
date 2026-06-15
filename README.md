@@ -17,10 +17,10 @@ npm run smoke:prod
 
 The smoke test checks the public site, admin page, API health, CORS, and protected admin list endpoints. It reads `ADMIN_TOKEN` from the environment or `.env.local`.
 
-To create labeled test records and mark them reviewed:
+To create labeled test records, mark them reviewed, and verify admin notes:
 
 ```bash
-npm run smoke:prod -- --submit --patch-status
+npm run smoke:prod -- --submit --patch-status --patch-admin-notes
 ```
 
 ## Endpoints
@@ -32,6 +32,8 @@ npm run smoke:prod -- --submit --patch-status
 - `GET /admin/wallet-beta-requests`
 - `PATCH /admin/contact-requests/:id/status`
 - `PATCH /admin/wallet-beta-requests/:id/status`
+- `PATCH /admin/contact-requests/:id/notes`
+- `PATCH /admin/wallet-beta-requests/:id/notes`
 - `GET /admin/strategies`
 - `GET /admin/execution-intents`
 - `GET /admin/risk-checks`

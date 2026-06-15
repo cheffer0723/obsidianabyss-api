@@ -20,7 +20,9 @@ import {
   listTestnetTransactions,
   listWalletBetaRequests,
   recordTestnetBalanceCheck,
+  updateContactRequestNotes,
   updateContactRequestStatus,
+  updateWalletBetaRequestNotes,
   updateWalletBetaRequestStatus
 } from './db.js';
 import { readBaseSepoliaBalance } from './baseSepolia.js';
@@ -101,6 +103,9 @@ const adminListSchema = z.object({
 });
 const adminStatusSchema = z.object({
   status: z.enum(['new', 'reviewed', 'approved', 'beta-ready', 'accepted', 'rejected', 'not-fit-yet'])
+});
+const adminNotesSchema = z.object({
+  adminNotes: z.string().trim().max(4000).optional().or(z.literal(''))
 });
 const idParamSchema = z.object({
   id: z.coerce.number().int().positive()
@@ -225,6 +230,30 @@ app.patch('/admin/contact-requests/:id/status', requireAdmin, async (req, res, n
   }
 });
 
+app.patch('/admin/contact-requests/:id/notes', requireAdmin, async (req, res, next) => {
+  const params = validate(idParamSchema, req.params);
+  const body = validate(adminNotesSchema, req.body);
+  if (params.error || body.error) {
+    res.status(400).json({ ok: false, errors: [...(params.error || []), ...(body.error || [])] });
+    return;
+  }
+
+  try {
+    const request = await updateContactRequestNotes({
+      id: params.data.id,
+      adminNotes: body.data.adminNotes || ''
+    });
+    if (!request) {
+      res.status(404).json({ ok: false, error: 'Contact request not found' });
+      return;
+    }
+
+    res.json({ ok: true, request });
+  } catch (error) {
+    next(error);
+  }
+});
+
 app.get('/admin/wallet-beta-requests', requireAdmin, async (req, res, next) => {
   const result = validate(adminListSchema, req.query);
   if (result.error) {
@@ -252,6 +281,30 @@ app.patch('/admin/wallet-beta-requests/:id/status', requireAdmin, async (req, re
     const request = await updateWalletBetaRequestStatus({
       id: params.data.id,
       status: body.data.status
+    });
+    if (!request) {
+      res.status(404).json({ ok: false, error: 'Wallet beta request not found' });
+      return;
+    }
+
+    res.json({ ok: true, request });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.patch('/admin/wallet-beta-requests/:id/notes', requireAdmin, async (req, res, next) => {
+  const params = validate(idParamSchema, req.params);
+  const body = validate(adminNotesSchema, req.body);
+  if (params.error || body.error) {
+    res.status(400).json({ ok: false, errors: [...(params.error || []), ...(body.error || [])] });
+    return;
+  }
+
+  try {
+    const request = await updateWalletBetaRequestNotes({
+      id: params.data.id,
+      adminNotes: body.data.adminNotes || ''
     });
     if (!request) {
       res.status(404).json({ ok: false, error: 'Wallet beta request not found' });
