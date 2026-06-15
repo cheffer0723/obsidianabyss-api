@@ -12,6 +12,7 @@ const SITE_URLS = [
 const allowedOrigin = process.env.SMOKE_ORIGIN || 'https://obsidianabyss.com';
 const shouldSubmit = process.argv.includes('--submit');
 const shouldPatch = process.argv.includes('--patch-status');
+const shouldCheckTestnet = process.argv.includes('--check-testnet-balance');
 const adminToken = process.env.ADMIN_TOKEN || (await readAdminToken());
 const results = [];
 
@@ -25,6 +26,13 @@ await checkAdminList('/admin/strategies', 'strategy admin list', 'strategies');
 await checkAdminList('/admin/execution-intents', 'execution intent admin list', 'intents');
 await checkAdminList('/admin/risk-checks', 'risk check admin list', 'checks');
 await checkAdminList('/admin/agent-runs', 'agent run admin list', 'runs');
+await checkAdminList('/admin/testnet/connectors', 'testnet connector admin list', 'connectors');
+await checkAdminList('/admin/testnet/balance-checks', 'testnet balance admin list', 'checks');
+await checkAdminList('/admin/testnet/transactions', 'testnet transaction admin list', 'transactions');
+
+if (shouldCheckTestnet) {
+  await runTestnetBalanceCheck();
+}
 
 if (shouldSubmit) {
   const contact = await submitContact();
@@ -173,6 +181,22 @@ async function patchStatus(pathname, label) {
     assert(body.ok === true, 'patch ok was not true');
     assert(body.request?.status === 'reviewed', 'status was not reviewed');
     return `request ${body.request.id} reviewed`;
+  });
+}
+
+async function runTestnetBalanceCheck() {
+  await record('run Base Sepolia balance check', async () => {
+    assert(adminToken, 'ADMIN_TOKEN missing');
+    const body = await requestJson(`${API_BASE}/admin/testnet/balance-checks/run`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${adminToken}`,
+        'Content-Type': 'application/json'
+      }
+    });
+    assert(body.ok === true, 'balance check ok was not true');
+    assert(body.check?.status === 'ok', 'balance check status was not ok');
+    return `wallet ${body.check.wallet_address} balance ${body.check.balance_eth} ETH`;
   });
 }
 

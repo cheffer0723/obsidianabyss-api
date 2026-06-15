@@ -7,6 +7,7 @@ import { z } from 'zod';
 import {
   createContactRequest,
   createWalletBetaRequest,
+  getTestnetConnector,
   initializeDatabase,
   isDatabaseConfigured,
   listAgentRuns,
@@ -14,10 +15,15 @@ import {
   listExecutionIntents,
   listRiskChecks,
   listStrategies,
+  listTestnetBalanceChecks,
+  listTestnetConnectors,
+  listTestnetTransactions,
   listWalletBetaRequests,
+  recordTestnetBalanceCheck,
   updateContactRequestStatus,
   updateWalletBetaRequestStatus
 } from './db.js';
+import { readBaseSepoliaBalance } from './baseSepolia.js';
 import {
   isMailConfigured,
   sendContactNotification,
@@ -313,6 +319,94 @@ app.get('/admin/agent-runs', requireAdmin, async (req, res, next) => {
   try {
     const runs = await listAgentRuns({ limit: result.data.limit });
     res.json({ ok: true, runs });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.get('/admin/testnet/connectors', requireAdmin, async (req, res, next) => {
+  const result = validate(adminListSchema, req.query);
+  if (result.error) {
+    res.status(400).json({ ok: false, errors: result.error });
+    return;
+  }
+
+  try {
+    const connectors = await listTestnetConnectors({ limit: result.data.limit });
+    res.json({ ok: true, connectors });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.get('/admin/testnet/balance-checks', requireAdmin, async (req, res, next) => {
+  const result = validate(adminListSchema, req.query);
+  if (result.error) {
+    res.status(400).json({ ok: false, errors: result.error });
+    return;
+  }
+
+  try {
+    const checks = await listTestnetBalanceChecks({ limit: result.data.limit });
+    res.json({ ok: true, checks });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.post('/admin/testnet/balance-checks/run', requireAdmin, async (_req, res, next) => {
+  try {
+    const connector = await getTestnetConnector('base-sepolia');
+    if (!connector) {
+      res.status(404).json({ ok: false, error: 'Base Sepolia connector not found' });
+      return;
+    }
+
+    try {
+      const snapshot = await readBaseSepoliaBalance({
+        rpcUrl: connector.rpc_url,
+        walletAddress: connector.wallet_address,
+        expectedChainId: connector.chain_id
+      });
+      const check = await recordTestnetBalanceCheck({
+        connectorId: connector.id,
+        networkKey: connector.network_key,
+        walletAddress: connector.wallet_address,
+        balanceWei: snapshot.balanceWei,
+        balanceEth: snapshot.balanceEth,
+        blockNumber: snapshot.blockNumber,
+        rpcUrl: connector.rpc_url,
+        status: 'ok'
+      });
+
+      res.status(201).json({ ok: true, check });
+    } catch (error) {
+      const check = await recordTestnetBalanceCheck({
+        connectorId: connector.id,
+        networkKey: connector.network_key,
+        walletAddress: connector.wallet_address,
+        rpcUrl: connector.rpc_url,
+        status: 'error',
+        error: error.message
+      });
+
+      res.status(502).json({ ok: false, error: error.message, check });
+    }
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.get('/admin/testnet/transactions', requireAdmin, async (req, res, next) => {
+  const result = validate(adminListSchema, req.query);
+  if (result.error) {
+    res.status(400).json({ ok: false, errors: result.error });
+    return;
+  }
+
+  try {
+    const transactions = await listTestnetTransactions({ limit: result.data.limit });
+    res.json({ ok: true, transactions });
   } catch (error) {
     next(error);
   }

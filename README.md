@@ -36,6 +36,10 @@ npm run smoke:prod -- --submit --patch-status
 - `GET /admin/execution-intents`
 - `GET /admin/risk-checks`
 - `GET /admin/agent-runs`
+- `GET /admin/testnet/connectors`
+- `GET /admin/testnet/balance-checks`
+- `POST /admin/testnet/balance-checks/run`
+- `GET /admin/testnet/transactions`
 
 Admin endpoints require:
 
@@ -71,6 +75,9 @@ Set `DATABASE_URL` to a Postgres connection string. The API creates these tables
 - `execution_intents`
 - `risk_checks`
 - `agent_runs`
+- `testnet_connectors`
+- `testnet_balance_checks`
+- `testnet_transactions`
 
 The strategy, intent, risk, and run tables are read-only admin scaffolding for simulation-mode pipeline review. Seeded records are placeholders only:
 
@@ -94,3 +101,22 @@ Set Microsoft 365 SMTP variables to email new submissions after they are saved:
 Email failures do not block database saves.
 
 This first backend stores no wallet secrets, performs no wallet signatures, and has no trading permissions.
+
+## Base Sepolia Testnet
+
+The testnet connector is read-only by default. It stores a public wallet address, checks Base Sepolia balance through JSON-RPC, and records the result for admin review.
+
+Defaults:
+
+- `BASE_SEPOLIA_RPC_URL=https://sepolia.base.org`
+- `BASE_SEPOLIA_CHAIN_ID=84532`
+- `BASE_SEPOLIA_WALLET_ADDRESS=0xD0c7ac431D98e47230EF86E3391128D3aD0C6b13`
+- `BASE_SEPOLIA_EXPLORER_URL=https://sepolia-explorer.base.org`
+
+Run a live read-only testnet balance check:
+
+```bash
+npm run smoke:prod -- --check-testnet-balance
+```
+
+This does not submit transactions, request signatures, or use private keys.

@@ -1,4 +1,5 @@
 import pg from 'pg';
+import { getBaseSepoliaConfig } from './baseSepolia.js';
 
 const { Pool } = pg;
 
@@ -148,6 +149,59 @@ export async function initializeDatabase() {
   `);
 
   await seedSimulationScaffold();
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS testnet_connectors (
+      id BIGSERIAL PRIMARY KEY,
+      network_key TEXT NOT NULL UNIQUE,
+      network_name TEXT NOT NULL,
+      chain_id INTEGER NOT NULL,
+      rpc_url TEXT NOT NULL,
+      explorer_url TEXT,
+      wallet_address TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'configured',
+      last_checked_at TIMESTAMPTZ,
+      last_block_number BIGINT,
+      last_error TEXT,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+  `);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS testnet_balance_checks (
+      id BIGSERIAL PRIMARY KEY,
+      connector_id BIGINT REFERENCES testnet_connectors(id) ON DELETE SET NULL,
+      network_key TEXT NOT NULL,
+      wallet_address TEXT NOT NULL,
+      balance_wei TEXT,
+      balance_eth TEXT,
+      block_number BIGINT,
+      rpc_url TEXT NOT NULL,
+      status TEXT NOT NULL,
+      error TEXT,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+  `);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS testnet_transactions (
+      id BIGSERIAL PRIMARY KEY,
+      connector_id BIGINT REFERENCES testnet_connectors(id) ON DELETE SET NULL,
+      network_key TEXT NOT NULL,
+      tx_hash TEXT,
+      from_address TEXT,
+      to_address TEXT,
+      value_wei TEXT,
+      value_eth TEXT,
+      purpose TEXT,
+      status TEXT NOT NULL DEFAULT 'not_enabled',
+      error TEXT,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+  `);
+
+  await seedTestnetConnector();
 }
 
 export async function createContactRequest({
@@ -398,6 +452,208 @@ export async function listAgentRuns({ limit = 50 } = {}) {
   );
 
   return result.rows;
+}
+
+export async function listTestnetConnectors({ limit = 50 } = {}) {
+  assertDatabaseConfigured();
+
+  const result = await pool.query(
+    `
+      SELECT
+        id,
+        network_key,
+        network_name,
+        chain_id,
+        rpc_url,
+        explorer_url,
+        wallet_address,
+        status,
+        last_checked_at,
+        last_block_number,
+        last_error,
+        created_at,
+        updated_at
+      FROM testnet_connectors
+      ORDER BY created_at DESC
+      LIMIT $1;
+    `,
+    [limit]
+  );
+
+  return result.rows;
+}
+
+export async function listTestnetBalanceChecks({ limit = 50 } = {}) {
+  assertDatabaseConfigured();
+
+  const result = await pool.query(
+    `
+      SELECT
+        id,
+        network_key,
+        wallet_address,
+        balance_wei,
+        balance_eth,
+        block_number,
+        rpc_url,
+        status,
+        error,
+        created_at
+      FROM testnet_balance_checks
+      ORDER BY created_at DESC
+      LIMIT $1;
+    `,
+    [limit]
+  );
+
+  return result.rows;
+}
+
+export async function listTestnetTransactions({ limit = 50 } = {}) {
+  assertDatabaseConfigured();
+
+  const result = await pool.query(
+    `
+      SELECT
+        id,
+        network_key,
+        tx_hash,
+        from_address,
+        to_address,
+        value_wei,
+        value_eth,
+        purpose,
+        status,
+        error,
+        created_at
+      FROM testnet_transactions
+      ORDER BY created_at DESC
+      LIMIT $1;
+    `,
+    [limit]
+  );
+
+  return result.rows;
+}
+
+export async function getTestnetConnector(networkKey) {
+  assertDatabaseConfigured();
+
+  const result = await pool.query(
+    `
+      SELECT
+        id,
+        network_key,
+        network_name,
+        chain_id,
+        rpc_url,
+        explorer_url,
+        wallet_address,
+        status,
+        last_checked_at,
+        last_block_number,
+        last_error
+      FROM testnet_connectors
+      WHERE network_key = $1;
+    `,
+    [networkKey]
+  );
+
+  return result.rows[0] || null;
+}
+
+export async function recordTestnetBalanceCheck({
+  connectorId,
+  networkKey,
+  walletAddress,
+  balanceWei,
+  balanceEth,
+  blockNumber,
+  rpcUrl,
+  status,
+  error
+}) {
+  assertDatabaseConfigured();
+
+  const result = await pool.query(
+    `
+      INSERT INTO testnet_balance_checks (
+        connector_id,
+        network_key,
+        wallet_address,
+        balance_wei,
+        balance_eth,
+        block_number,
+        rpc_url,
+        status,
+        error
+      )
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NULLIF($9, ''))
+      RETURNING id, network_key, wallet_address, balance_wei, balance_eth, block_number, rpc_url, status, error, created_at;
+    `,
+    [
+      connectorId,
+      networkKey,
+      walletAddress,
+      balanceWei || null,
+      balanceEth || null,
+      blockNumber || null,
+      rpcUrl,
+      status,
+      error || ''
+    ]
+  );
+
+  await pool.query(
+    `
+      UPDATE testnet_connectors
+      SET
+        status = $2,
+        last_checked_at = NOW(),
+        last_block_number = $3,
+        last_error = NULLIF($4, ''),
+        updated_at = NOW()
+      WHERE id = $1;
+    `,
+    [connectorId, status, blockNumber || null, error || '']
+  );
+
+  return result.rows[0];
+}
+
+async function seedTestnetConnector() {
+  const config = getBaseSepoliaConfig();
+
+  await pool.query(
+    `
+      INSERT INTO testnet_connectors (
+        network_key,
+        network_name,
+        chain_id,
+        rpc_url,
+        explorer_url,
+        wallet_address,
+        status
+      )
+      VALUES ($1, $2, $3, $4, $5, $6, 'configured')
+      ON CONFLICT (network_key) DO UPDATE
+      SET
+        network_name = EXCLUDED.network_name,
+        chain_id = EXCLUDED.chain_id,
+        rpc_url = EXCLUDED.rpc_url,
+        explorer_url = EXCLUDED.explorer_url,
+        wallet_address = EXCLUDED.wallet_address,
+        updated_at = NOW();
+    `,
+    [
+      config.networkKey,
+      config.networkName,
+      config.chainId,
+      config.rpcUrl,
+      config.explorerUrl,
+      config.walletAddress
+    ]
+  );
 }
 
 async function seedSimulationScaffold() {
