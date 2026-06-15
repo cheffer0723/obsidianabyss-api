@@ -65,6 +65,11 @@ const contactSchema = z.object({
   name: z.string().trim().min(1).max(120),
   email: z.string().trim().email().max(254),
   message: z.string().trim().min(1).max(4000),
+  experienceLevel: z.string().trim().max(80).optional().or(z.literal('')),
+  accessMode: z.string().trim().max(80).optional().or(z.literal('')),
+  preferredAssets: z.string().trim().max(240).optional().or(z.literal('')),
+  preferredExchange: z.string().trim().max(160).optional().or(z.literal('')),
+  automationComfort: z.string().trim().max(80).optional().or(z.literal('')),
   company: z.string().trim().max(0).optional().or(z.literal(''))
 });
 
@@ -72,6 +77,11 @@ const walletBetaSchema = z.object({
   name: z.string().trim().min(1).max(120),
   email: z.string().trim().email().max(254),
   walletAddress: z.string().trim().max(160).optional().or(z.literal('')),
+  experienceLevel: z.string().trim().max(80).optional().or(z.literal('')),
+  accessMode: z.string().trim().max(80).optional().or(z.literal('')),
+  preferredAssets: z.string().trim().max(240).optional().or(z.literal('')),
+  preferredExchange: z.string().trim().max(160).optional().or(z.literal('')),
+  automationComfort: z.string().trim().max(80).optional().or(z.literal('')),
   notes: z.string().trim().max(2000).optional().or(z.literal('')),
   company: z.string().trim().max(0).optional().or(z.literal(''))
 });
@@ -80,7 +90,7 @@ const adminListSchema = z.object({
   limit: z.coerce.number().int().min(1).max(200).default(50)
 });
 const adminStatusSchema = z.object({
-  status: z.enum(['new', 'reviewed', 'accepted', 'rejected'])
+  status: z.enum(['new', 'reviewed', 'approved', 'beta-ready', 'accepted', 'rejected', 'not-fit-yet'])
 });
 const idParamSchema = z.object({
   id: z.coerce.number().int().positive()

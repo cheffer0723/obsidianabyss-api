@@ -9,6 +9,20 @@ npm install
 npm run dev
 ```
 
+## Production Smoke Test
+
+```bash
+npm run smoke:prod
+```
+
+The smoke test checks the public site, admin page, API health, CORS, and protected admin list endpoints. It reads `ADMIN_TOKEN` from the environment or `.env.local`.
+
+To create labeled test records and mark them reviewed:
+
+```bash
+npm run smoke:prod -- --submit --patch-status
+```
+
 ## Endpoints
 
 - `GET /health`
@@ -29,8 +43,19 @@ Request statuses:
 
 - `new`
 - `reviewed`
+- `approved`
+- `beta-ready`
 - `accepted`
 - `rejected`
+- `not-fit-yet`
+
+Contact and wallet beta submissions accept these optional lead-qualification fields:
+
+- `experienceLevel`
+- `accessMode`
+- `preferredAssets`
+- `preferredExchange`
+- `automationComfort`
 
 ## Database
 

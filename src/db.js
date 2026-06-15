@@ -24,6 +24,11 @@ export async function initializeDatabase() {
       name TEXT NOT NULL,
       email TEXT NOT NULL,
       message TEXT NOT NULL,
+      experience_level TEXT,
+      access_mode TEXT,
+      preferred_assets TEXT,
+      preferred_exchange TEXT,
+      automation_comfort TEXT,
       status TEXT NOT NULL DEFAULT 'new',
       status_updated_at TIMESTAMPTZ,
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
@@ -41,11 +46,25 @@ export async function initializeDatabase() {
   `);
 
   await pool.query(`
+    ALTER TABLE contact_requests
+    ADD COLUMN IF NOT EXISTS experience_level TEXT,
+    ADD COLUMN IF NOT EXISTS access_mode TEXT,
+    ADD COLUMN IF NOT EXISTS preferred_assets TEXT,
+    ADD COLUMN IF NOT EXISTS preferred_exchange TEXT,
+    ADD COLUMN IF NOT EXISTS automation_comfort TEXT;
+  `);
+
+  await pool.query(`
     CREATE TABLE IF NOT EXISTS wallet_beta_requests (
       id BIGSERIAL PRIMARY KEY,
       name TEXT NOT NULL,
       email TEXT NOT NULL,
       wallet_address TEXT,
+      experience_level TEXT,
+      access_mode TEXT,
+      preferred_assets TEXT,
+      preferred_exchange TEXT,
+      automation_comfort TEXT,
       notes TEXT,
       status TEXT NOT NULL DEFAULT 'new',
       status_updated_at TIMESTAMPTZ,
@@ -62,33 +81,99 @@ export async function initializeDatabase() {
     ALTER TABLE wallet_beta_requests
     ADD COLUMN IF NOT EXISTS status_updated_at TIMESTAMPTZ;
   `);
+
+  await pool.query(`
+    ALTER TABLE wallet_beta_requests
+    ADD COLUMN IF NOT EXISTS experience_level TEXT,
+    ADD COLUMN IF NOT EXISTS access_mode TEXT,
+    ADD COLUMN IF NOT EXISTS preferred_assets TEXT,
+    ADD COLUMN IF NOT EXISTS preferred_exchange TEXT,
+    ADD COLUMN IF NOT EXISTS automation_comfort TEXT;
+  `);
 }
 
-export async function createContactRequest({ name, email, message }) {
+export async function createContactRequest({
+  name,
+  email,
+  message,
+  experienceLevel,
+  accessMode,
+  preferredAssets,
+  preferredExchange,
+  automationComfort
+}) {
   assertDatabaseConfigured();
 
   const result = await pool.query(
     `
-      INSERT INTO contact_requests (name, email, message)
-      VALUES ($1, $2, $3)
+      INSERT INTO contact_requests (
+        name,
+        email,
+        message,
+        experience_level,
+        access_mode,
+        preferred_assets,
+        preferred_exchange,
+        automation_comfort
+      )
+      VALUES ($1, $2, $3, NULLIF($4, ''), NULLIF($5, ''), NULLIF($6, ''), NULLIF($7, ''), NULLIF($8, ''))
       RETURNING id, created_at;
     `,
-    [name, email, message]
+    [
+      name,
+      email,
+      message,
+      experienceLevel || '',
+      accessMode || '',
+      preferredAssets || '',
+      preferredExchange || '',
+      automationComfort || ''
+    ]
   );
 
   return result.rows[0];
 }
 
-export async function createWalletBetaRequest({ name, email, walletAddress, notes }) {
+export async function createWalletBetaRequest({
+  name,
+  email,
+  walletAddress,
+  notes,
+  experienceLevel,
+  accessMode,
+  preferredAssets,
+  preferredExchange,
+  automationComfort
+}) {
   assertDatabaseConfigured();
 
   const result = await pool.query(
     `
-      INSERT INTO wallet_beta_requests (name, email, wallet_address, notes)
-      VALUES ($1, $2, NULLIF($3, ''), NULLIF($4, ''))
+      INSERT INTO wallet_beta_requests (
+        name,
+        email,
+        wallet_address,
+        notes,
+        experience_level,
+        access_mode,
+        preferred_assets,
+        preferred_exchange,
+        automation_comfort
+      )
+      VALUES ($1, $2, NULLIF($3, ''), NULLIF($4, ''), NULLIF($5, ''), NULLIF($6, ''), NULLIF($7, ''), NULLIF($8, ''), NULLIF($9, ''))
       RETURNING id, created_at;
     `,
-    [name, email, walletAddress || '', notes || '']
+    [
+      name,
+      email,
+      walletAddress || '',
+      notes || '',
+      experienceLevel || '',
+      accessMode || '',
+      preferredAssets || '',
+      preferredExchange || '',
+      automationComfort || ''
+    ]
   );
 
   return result.rows[0];
@@ -100,6 +185,7 @@ export async function listContactRequests({ limit = 50 } = {}) {
   const result = await pool.query(
     `
       SELECT id, name, email, message, status, status_updated_at, created_at
+      , experience_level, access_mode, preferred_assets, preferred_exchange, automation_comfort
       FROM contact_requests
       ORDER BY created_at DESC
       LIMIT $1;
@@ -116,6 +202,7 @@ export async function listWalletBetaRequests({ limit = 50 } = {}) {
   const result = await pool.query(
     `
       SELECT id, name, email, wallet_address, notes, status, status_updated_at, created_at
+      , experience_level, access_mode, preferred_assets, preferred_exchange, automation_comfort
       FROM wallet_beta_requests
       ORDER BY created_at DESC
       LIMIT $1;

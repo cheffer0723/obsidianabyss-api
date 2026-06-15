@@ -42,6 +42,11 @@ export async function sendContactNotification({ request, submission }) {
       `Created: ${request.created_at}`,
       `Name: ${submission.name}`,
       `Email: ${submission.email}`,
+      `Experience level: ${submission.experienceLevel || ''}`,
+      `Access mode: ${submission.accessMode || ''}`,
+      `Preferred assets: ${submission.preferredAssets || ''}`,
+      `Preferred exchange/wallet: ${submission.preferredExchange || ''}`,
+      `Automation comfort: ${submission.automationComfort || ''}`,
       '',
       'Message:',
       submission.message
@@ -69,6 +74,11 @@ export async function sendWalletBetaNotification({ request, submission }) {
       `Name: ${submission.name}`,
       `Email: ${submission.email}`,
       `Wallet address: ${submission.walletAddress || ''}`,
+      `Experience level: ${submission.experienceLevel || ''}`,
+      `Access mode: ${submission.accessMode || ''}`,
+      `Preferred assets: ${submission.preferredAssets || ''}`,
+      `Preferred exchange/wallet: ${submission.preferredExchange || ''}`,
+      `Automation comfort: ${submission.automationComfort || ''}`,
       '',
       'Notes:',
       submission.notes || ''
