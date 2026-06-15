@@ -32,6 +32,10 @@ npm run smoke:prod -- --submit --patch-status
 - `GET /admin/wallet-beta-requests`
 - `PATCH /admin/contact-requests/:id/status`
 - `PATCH /admin/wallet-beta-requests/:id/status`
+- `GET /admin/strategies`
+- `GET /admin/execution-intents`
+- `GET /admin/risk-checks`
+- `GET /admin/agent-runs`
 
 Admin endpoints require:
 
@@ -63,6 +67,17 @@ Set `DATABASE_URL` to a Postgres connection string. The API creates these tables
 
 - `contact_requests`
 - `wallet_beta_requests`
+- `strategies`
+- `execution_intents`
+- `risk_checks`
+- `agent_runs`
+
+The strategy, intent, risk, and run tables are read-only admin scaffolding for simulation-mode pipeline review. Seeded records are placeholders only:
+
+- no wallet signatures
+- no exchange keys
+- no live order placement
+- no autonomous execution
 
 ## Email Notifications
 

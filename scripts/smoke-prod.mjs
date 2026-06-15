@@ -21,6 +21,10 @@ await checkCors('/contact');
 await checkCors('/wallet-beta-request');
 await checkAdminList('/admin/contact-requests', 'contact admin list');
 await checkAdminList('/admin/wallet-beta-requests', 'wallet admin list');
+await checkAdminList('/admin/strategies', 'strategy admin list', 'strategies');
+await checkAdminList('/admin/execution-intents', 'execution intent admin list', 'intents');
+await checkAdminList('/admin/risk-checks', 'risk check admin list', 'checks');
+await checkAdminList('/admin/agent-runs', 'agent run admin list', 'runs');
 
 if (shouldSubmit) {
   const contact = await submitContact();
@@ -85,7 +89,7 @@ async function checkCors(pathname) {
   });
 }
 
-async function checkAdminList(pathname, label) {
+async function checkAdminList(pathname, label, collectionKey = 'requests') {
   await record(label, async () => {
     assert(adminToken, 'ADMIN_TOKEN missing');
     const body = await requestJson(`${API_BASE}${pathname}?limit=1`, {
@@ -94,8 +98,8 @@ async function checkAdminList(pathname, label) {
       }
     });
     assert(body.ok === true, 'admin response ok was not true');
-    assert(Array.isArray(body.requests), 'requests was not an array');
-    return `${body.requests.length} row(s) returned`;
+    assert(Array.isArray(body[collectionKey]), `${collectionKey} was not an array`);
+    return `${body[collectionKey].length} row(s) returned`;
   });
 }
 

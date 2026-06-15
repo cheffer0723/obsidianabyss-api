@@ -9,7 +9,11 @@ import {
   createWalletBetaRequest,
   initializeDatabase,
   isDatabaseConfigured,
+  listAgentRuns,
   listContactRequests,
+  listExecutionIntents,
+  listRiskChecks,
+  listStrategies,
   listWalletBetaRequests,
   updateContactRequestStatus,
   updateWalletBetaRequestStatus
@@ -249,6 +253,66 @@ app.patch('/admin/wallet-beta-requests/:id/status', requireAdmin, async (req, re
     }
 
     res.json({ ok: true, request });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.get('/admin/strategies', requireAdmin, async (req, res, next) => {
+  const result = validate(adminListSchema, req.query);
+  if (result.error) {
+    res.status(400).json({ ok: false, errors: result.error });
+    return;
+  }
+
+  try {
+    const strategies = await listStrategies({ limit: result.data.limit });
+    res.json({ ok: true, strategies });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.get('/admin/execution-intents', requireAdmin, async (req, res, next) => {
+  const result = validate(adminListSchema, req.query);
+  if (result.error) {
+    res.status(400).json({ ok: false, errors: result.error });
+    return;
+  }
+
+  try {
+    const intents = await listExecutionIntents({ limit: result.data.limit });
+    res.json({ ok: true, intents });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.get('/admin/risk-checks', requireAdmin, async (req, res, next) => {
+  const result = validate(adminListSchema, req.query);
+  if (result.error) {
+    res.status(400).json({ ok: false, errors: result.error });
+    return;
+  }
+
+  try {
+    const checks = await listRiskChecks({ limit: result.data.limit });
+    res.json({ ok: true, checks });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.get('/admin/agent-runs', requireAdmin, async (req, res, next) => {
+  const result = validate(adminListSchema, req.query);
+  if (result.error) {
+    res.status(400).json({ ok: false, errors: result.error });
+    return;
+  }
+
+  try {
+    const runs = await listAgentRuns({ limit: result.data.limit });
+    res.json({ ok: true, runs });
   } catch (error) {
     next(error);
   }

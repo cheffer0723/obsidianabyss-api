@@ -90,6 +90,64 @@ export async function initializeDatabase() {
     ADD COLUMN IF NOT EXISTS preferred_exchange TEXT,
     ADD COLUMN IF NOT EXISTS automation_comfort TEXT;
   `);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS strategies (
+      id BIGSERIAL PRIMARY KEY,
+      strategy_key TEXT NOT NULL UNIQUE,
+      name TEXT NOT NULL,
+      mode TEXT NOT NULL DEFAULT 'simulation',
+      status TEXT NOT NULL DEFAULT 'draft',
+      assets JSONB NOT NULL DEFAULT '[]'::jsonb,
+      rule_type TEXT NOT NULL,
+      max_trade_size_usd NUMERIC(14, 2),
+      cooldown_minutes INTEGER,
+      description TEXT,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+  `);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS execution_intents (
+      id BIGSERIAL PRIMARY KEY,
+      intent_key TEXT NOT NULL UNIQUE,
+      strategy_id BIGINT REFERENCES strategies(id) ON DELETE SET NULL,
+      symbol TEXT NOT NULL,
+      side TEXT NOT NULL,
+      notional_usd NUMERIC(14, 2),
+      order_type TEXT NOT NULL DEFAULT 'market',
+      status TEXT NOT NULL DEFAULT 'simulated',
+      expires_at TIMESTAMPTZ,
+      raw_payload JSONB NOT NULL DEFAULT '{}'::jsonb,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+  `);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS risk_checks (
+      id BIGSERIAL PRIMARY KEY,
+      intent_id BIGINT REFERENCES execution_intents(id) ON DELETE CASCADE,
+      decision TEXT NOT NULL,
+      reason TEXT,
+      checks JSONB NOT NULL DEFAULT '{}'::jsonb,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+  `);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS agent_runs (
+      id BIGSERIAL PRIMARY KEY,
+      run_key TEXT NOT NULL UNIQUE,
+      run_type TEXT NOT NULL,
+      status TEXT NOT NULL,
+      summary TEXT,
+      metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+  `);
+
+  await seedSimulationScaffold();
 }
 
 export async function createContactRequest({
@@ -243,6 +301,209 @@ export async function updateWalletBetaRequestStatus({ id, status }) {
   );
 
   return result.rows[0] || null;
+}
+
+export async function listStrategies({ limit = 50 } = {}) {
+  assertDatabaseConfigured();
+
+  const result = await pool.query(
+    `
+      SELECT
+        id,
+        strategy_key,
+        name,
+        mode,
+        status,
+        assets,
+        rule_type,
+        max_trade_size_usd,
+        cooldown_minutes,
+        description,
+        created_at,
+        updated_at
+      FROM strategies
+      ORDER BY created_at DESC
+      LIMIT $1;
+    `,
+    [limit]
+  );
+
+  return result.rows;
+}
+
+export async function listExecutionIntents({ limit = 50 } = {}) {
+  assertDatabaseConfigured();
+
+  const result = await pool.query(
+    `
+      SELECT
+        execution_intents.id,
+        execution_intents.intent_key,
+        strategies.strategy_key,
+        strategies.name AS strategy_name,
+        execution_intents.symbol,
+        execution_intents.side,
+        execution_intents.notional_usd,
+        execution_intents.order_type,
+        execution_intents.status,
+        execution_intents.expires_at,
+        execution_intents.raw_payload,
+        execution_intents.created_at
+      FROM execution_intents
+      LEFT JOIN strategies ON strategies.id = execution_intents.strategy_id
+      ORDER BY execution_intents.created_at DESC
+      LIMIT $1;
+    `,
+    [limit]
+  );
+
+  return result.rows;
+}
+
+export async function listRiskChecks({ limit = 50 } = {}) {
+  assertDatabaseConfigured();
+
+  const result = await pool.query(
+    `
+      SELECT
+        risk_checks.id,
+        execution_intents.intent_key,
+        execution_intents.symbol,
+        risk_checks.decision,
+        risk_checks.reason,
+        risk_checks.checks,
+        risk_checks.created_at
+      FROM risk_checks
+      LEFT JOIN execution_intents ON execution_intents.id = risk_checks.intent_id
+      ORDER BY risk_checks.created_at DESC
+      LIMIT $1;
+    `,
+    [limit]
+  );
+
+  return result.rows;
+}
+
+export async function listAgentRuns({ limit = 50 } = {}) {
+  assertDatabaseConfigured();
+
+  const result = await pool.query(
+    `
+      SELECT id, run_key, run_type, status, summary, metadata, created_at
+      FROM agent_runs
+      ORDER BY created_at DESC
+      LIMIT $1;
+    `,
+    [limit]
+  );
+
+  return result.rows;
+}
+
+async function seedSimulationScaffold() {
+  await pool.query(`
+    INSERT INTO strategies (
+      strategy_key,
+      name,
+      mode,
+      status,
+      assets,
+      rule_type,
+      max_trade_size_usd,
+      cooldown_minutes,
+      description
+    )
+    VALUES (
+      'starter-btc-simulation',
+      'Starter BTC Simulation',
+      'simulation',
+      'draft',
+      '["BTC"]'::jsonb,
+      'fixed-rule-placeholder',
+      25.00,
+      1440,
+      'Placeholder starter strategy for paper-mode execution pipeline testing. No exchange or wallet execution is attached.'
+    )
+    ON CONFLICT (strategy_key) DO UPDATE
+    SET
+      name = EXCLUDED.name,
+      mode = EXCLUDED.mode,
+      status = EXCLUDED.status,
+      assets = EXCLUDED.assets,
+      rule_type = EXCLUDED.rule_type,
+      max_trade_size_usd = EXCLUDED.max_trade_size_usd,
+      cooldown_minutes = EXCLUDED.cooldown_minutes,
+      description = EXCLUDED.description,
+      updated_at = NOW();
+  `);
+
+  await pool.query(`
+    INSERT INTO execution_intents (
+      intent_key,
+      strategy_id,
+      symbol,
+      side,
+      notional_usd,
+      order_type,
+      status,
+      expires_at,
+      raw_payload
+    )
+    SELECT
+      'demo-intent-btc-paper-001',
+      strategies.id,
+      'BTC-USD',
+      'buy',
+      25.00,
+      'market',
+      'simulated',
+      NOW() + INTERVAL '1 hour',
+      '{
+        "source": "simulation_scaffold",
+        "live_execution": false,
+        "rule": "demo fixed-rule placeholder"
+      }'::jsonb
+    FROM strategies
+    WHERE strategies.strategy_key = 'starter-btc-simulation'
+    ON CONFLICT (intent_key) DO NOTHING;
+  `);
+
+  await pool.query(`
+    INSERT INTO risk_checks (intent_id, decision, reason, checks)
+    SELECT
+      execution_intents.id,
+      'allowed',
+      'Simulation-only intent within placeholder size and cooldown limits.',
+      '{
+        "live_execution": false,
+        "max_trade_size_usd": true,
+        "cooldown": true,
+        "kill_switch": "not_applicable"
+      }'::jsonb
+    FROM execution_intents
+    WHERE execution_intents.intent_key = 'demo-intent-btc-paper-001'
+      AND NOT EXISTS (
+        SELECT 1
+        FROM risk_checks
+        WHERE risk_checks.intent_id = execution_intents.id
+      );
+  `);
+
+  await pool.query(`
+    INSERT INTO agent_runs (run_key, run_type, status, summary, metadata)
+    VALUES (
+      'demo-run-simulation-bootstrap',
+      'simulation-bootstrap',
+      'complete',
+      'Seeded read-only scaffold for strategy, intent, risk, and audit dashboard verification.',
+      '{
+        "live_execution": false,
+        "wallet_permissions": false,
+        "exchange_permissions": false
+      }'::jsonb
+    )
+    ON CONFLICT (run_key) DO NOTHING;
+  `);
 }
 
 function assertDatabaseConfigured() {
