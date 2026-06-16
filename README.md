@@ -113,7 +113,9 @@ This first backend stores no wallet secrets, performs no wallet signatures, and 
 
 ## Abyss Guide Advisor
 
-The advisor endpoint powers the public Abyss Guide chat. It recommends one setup from the internal catalog and is constrained to research-only, paper-first guidance.
+The advisor endpoint powers the public Abyss Guide chat. It is a preview-only sales/advisory layer: it can explain the catalog and recommend a likely setup fit, but it must not expose real signals, thresholds, alert history, strategy internals, wallet actions, or trading instructions.
+
+There is no free product tier. Public visitors can try the teaser guide, then request closed beta access. Paid access starts at `$9.99/month` once users are approved and billing is enabled.
 
 Set these variables to enable it:
 
@@ -129,6 +131,7 @@ Content-Type: application/json
 
 ```json
 {
+  "mode": "preview",
   "messages": [
     {
       "role": "user",

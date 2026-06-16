@@ -488,7 +488,8 @@ const advisorSchema = z.object({
       })
     )
     .min(1)
-    .max(24)
+    .max(10),
+  mode: z.literal('preview').optional()
 });
 
 app.post('/advisor/message', advisorLimiter, async (req, res, next) => {
@@ -505,7 +506,7 @@ app.post('/advisor/message', advisorLimiter, async (req, res, next) => {
 
   try {
     const reply = await runAdvisor(result.data.messages);
-    res.json({ ok: true, reply });
+    res.json({ ok: true, mode: 'preview', reply });
   } catch (error) {
     next(error);
   }

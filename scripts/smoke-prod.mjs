@@ -84,6 +84,8 @@ async function checkPages() {
       } else if (url.endsWith('/')) {
         assert(body.includes(API_BASE), 'missing production API base');
         assert(body.includes('Abyss Guide'), 'missing advisor guide text');
+        assert(body.includes('Majors Trend'), 'missing setup catalog text');
+        assert(body.includes('$9.99'), 'missing starting price text');
       }
       return `${response.status} ${response.url}`;
     });
@@ -252,6 +254,7 @@ async function checkAdvisorMessage() {
         Origin: allowedOrigin
       },
       body: JSON.stringify({
+        mode: 'preview',
         messages: [
           {
             role: 'user',
