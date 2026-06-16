@@ -18,6 +18,7 @@ const shouldSubmit = process.argv.includes('--submit');
 const shouldPatch = process.argv.includes('--patch-status');
 const shouldPatchNotes = process.argv.includes('--patch-admin-notes');
 const shouldCheckTestnet = process.argv.includes('--check-testnet-balance');
+const shouldCheckAdvisor = process.argv.includes('--check-advisor');
 const adminToken = process.env.ADMIN_TOKEN || (await readAdminToken());
 const results = [];
 
@@ -25,6 +26,7 @@ await checkPages();
 await checkHealth();
 await checkCors('/contact');
 await checkCors('/wallet-beta-request');
+await checkCors('/advisor/message');
 await checkAdminList('/admin/contact-requests', 'contact admin list');
 await checkAdminList('/admin/wallet-beta-requests', 'wallet admin list');
 await checkAdminList('/admin/strategies', 'strategy admin list', 'strategies');
@@ -37,6 +39,10 @@ await checkAdminList('/admin/testnet/transactions', 'testnet transaction admin l
 
 if (shouldCheckTestnet) {
   await runTestnetBalanceCheck();
+}
+
+if (shouldCheckAdvisor) {
+  await checkAdvisorMessage();
 }
 
 if (shouldSubmit) {
@@ -77,6 +83,7 @@ async function checkPages() {
         assert(body.includes('Obsidian Abyss Admin'), 'missing admin title');
       } else if (url.endsWith('/')) {
         assert(body.includes(API_BASE), 'missing production API base');
+        assert(body.includes('Abyss Guide'), 'missing advisor guide text');
       }
       return `${response.status} ${response.url}`;
     });
@@ -90,7 +97,7 @@ async function checkHealth() {
     assert(body.database?.configured === true, 'database not configured');
     assert(body.admin?.configured === true, 'admin not configured');
     assert(body.mail?.configured === true, 'mail not configured');
-    return 'database/admin/mail configured';
+    return `database/admin/mail configured; advisor configured: ${body.advisor?.configured === true}`;
   });
 }
 
@@ -233,6 +240,29 @@ async function runTestnetBalanceCheck() {
     assert(body.ok === true, 'balance check ok was not true');
     assert(body.check?.status === 'ok', 'balance check status was not ok');
     return `wallet ${body.check.wallet_address} balance ${body.check.balance_eth} ETH`;
+  });
+}
+
+async function checkAdvisorMessage() {
+  await record('advisor message', async () => {
+    const body = await requestJson(`${API_BASE}/advisor/message`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Origin: allowedOrigin
+      },
+      body: JSON.stringify({
+        messages: [
+          {
+            role: 'user',
+            content: 'I am new and interested in BTC. I want to be cautious. What setup fits?'
+          }
+        ]
+      })
+    });
+    assert(body.ok === true, 'advisor response ok was not true');
+    assert(typeof body.reply === 'string' && body.reply.length > 20, 'advisor reply was too short');
+    return body.reply.slice(0, 120).replace(/\s+/g, ' ');
   });
 }
 

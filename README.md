@@ -23,11 +23,18 @@ To create labeled test records, mark them reviewed, and verify admin notes:
 npm run smoke:prod -- --submit --patch-status --patch-admin-notes
 ```
 
+To run a live Abyss Guide advisor call:
+
+```bash
+npm run smoke:prod -- --check-advisor
+```
+
 ## Endpoints
 
 - `GET /health`
 - `POST /contact`
 - `POST /wallet-beta-request`
+- `POST /advisor/message`
 - `GET /admin/contact-requests`
 - `GET /admin/wallet-beta-requests`
 - `PATCH /admin/contact-requests/:id/status`
@@ -103,6 +110,35 @@ Set Microsoft 365 SMTP variables to email new submissions after they are saved:
 Email failures do not block database saves.
 
 This first backend stores no wallet secrets, performs no wallet signatures, and has no trading permissions.
+
+## Abyss Guide Advisor
+
+The advisor endpoint powers the public Abyss Guide chat. It recommends one setup from the internal catalog and is constrained to research-only, paper-first guidance.
+
+Set these variables to enable it:
+
+- `ANTHROPIC_API_KEY=<api key>`
+- `ADVISOR_MODEL=claude-sonnet-4-6` optional; defaults to `claude-sonnet-4-6`
+
+Request:
+
+```http
+POST /advisor/message
+Content-Type: application/json
+```
+
+```json
+{
+  "messages": [
+    {
+      "role": "user",
+      "content": "I am new and interested in BTC. I want to be cautious."
+    }
+  ]
+}
+```
+
+The endpoint does not accept wallet keys, execute trades, or manage funds.
 
 ## Base Sepolia Testnet
 

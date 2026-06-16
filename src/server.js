@@ -31,6 +31,7 @@ import {
   sendContactNotification,
   sendWalletBetaNotification
 } from './mail.js';
+import { isAdvisorConfigured, runAdvisor } from './advisor.js';
 
 const app = express();
 const port = Number(process.env.PORT || 3001);
@@ -53,6 +54,16 @@ const submissionLimiter = rateLimit({
   message: {
     ok: false,
     error: 'Too many requests. Please try again later.'
+  }
+});
+const advisorLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 40,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: {
+    ok: false,
+    error: 'Too many advisor requests. Please slow down and try again shortly.'
   }
 });
 
@@ -137,6 +148,9 @@ app.get('/health', (_req, res) => {
     },
     mail: {
       configured: isMailConfigured()
+    },
+    advisor: {
+      configured: isAdvisorConfigured()
     },
     timestamp: new Date().toISOString()
   });
@@ -460,6 +474,38 @@ app.get('/admin/testnet/transactions', requireAdmin, async (req, res, next) => {
   try {
     const transactions = await listTestnetTransactions({ limit: result.data.limit });
     res.json({ ok: true, transactions });
+  } catch (error) {
+    next(error);
+  }
+});
+
+const advisorSchema = z.object({
+  messages: z
+    .array(
+      z.object({
+        role: z.enum(['user', 'assistant']),
+        content: z.string().trim().min(1).max(2000)
+      })
+    )
+    .min(1)
+    .max(24)
+});
+
+app.post('/advisor/message', advisorLimiter, async (req, res, next) => {
+  const result = validate(advisorSchema, req.body);
+  if (result.error) {
+    res.status(400).json({ ok: false, errors: result.error });
+    return;
+  }
+
+  if (result.data.messages[0].role !== 'user') {
+    res.status(400).json({ ok: false, error: 'Conversation must start with a user message.' });
+    return;
+  }
+
+  try {
+    const reply = await runAdvisor(result.data.messages);
+    res.json({ ok: true, reply });
   } catch (error) {
     next(error);
   }
