@@ -35,8 +35,16 @@ npm run smoke:prod -- --check-advisor
 - `POST /contact`
 - `POST /wallet-beta-request`
 - `POST /advisor/message`
+- `POST /beta/invites/redeem`
+- `GET /beta/session`
+- `POST /beta/logout`
+- `GET /beta/catalog`
+- `POST /beta/advisor/message`
 - `GET /admin/contact-requests`
 - `GET /admin/wallet-beta-requests`
+- `POST /admin/contact-requests/:id/invite`
+- `POST /admin/wallet-beta-requests/:id/invite`
+- `GET /admin/beta-members`
 - `PATCH /admin/contact-requests/:id/status`
 - `PATCH /admin/wallet-beta-requests/:id/status`
 - `PATCH /admin/contact-requests/:id/notes`
@@ -142,6 +150,25 @@ Content-Type: application/json
 ```
 
 The endpoint does not accept wallet keys, execute trades, or manage funds.
+
+## Closed Beta Access
+
+The closed beta flow is invite-only:
+
+1. A lead is submitted through `/contact` or `/wallet-beta-request`
+2. Admin marks the request `approved`, `beta-ready`, or `accepted`
+3. Admin issues an invite
+4. The invite email points to `beta.html?invite=<token>`
+5. Redeeming the invite creates a beta session
+
+Environment variables used by this flow:
+
+- `BETA_APP_URL=https://www.obsidianabyss.com/beta.html`
+- `BETA_SESSION_COOKIE_NAME=obsidian_beta_session` optional
+- `BETA_INVITE_HOURS=168` optional; default 7 days
+- `BETA_SESSION_HOURS=336` optional; default 14 days
+
+The beta session is API-backed and intended for the static site at `obsidianabyss.com` calling the Railway API with credentials.
 
 ## Base Sepolia Testnet
 

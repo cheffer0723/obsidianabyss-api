@@ -8,6 +8,8 @@ export const CATALOG = [
     asset: 'Solana tokens / memecoins',
     archetype: 'launch-risk-screen',
     summary: 'Flags risky deployers and launch patterns before a user engages. This is where operator-intel edge plugs in over time.',
+    member_detail:
+      'Best for users who want launch filtering, deployer screening, and a slower first-pass workflow before they trust any new Solana flow.',
     risk: 'Cautious',
     modes: ['paper', 'alerts'],
     stage: 'v1'
@@ -19,6 +21,8 @@ export const CATALOG = [
     asset: 'BTC / ETH',
     archetype: 'trend-regime',
     summary: 'Clean trend and regime signal on established assets for users who want the safest starting lane.',
+    member_detail:
+      'Best for cautious users who want one understandable majors setup before touching anything noisy or fast-moving.',
     risk: 'Cautious',
     modes: ['paper', 'alerts'],
     stage: 'v1'
@@ -30,6 +34,8 @@ export const CATALOG = [
     asset: 'EVM majors',
     archetype: 'trend-regime',
     summary: 'Regime and trend signals on larger EVM assets, aligned with the Base/testnet/wallet path.',
+    member_detail:
+      'Best for users who want an EVM-native path tied to the Base roadmap and a more deliberate route into wallet-connected workflows later.',
     risk: 'Balanced',
     modes: ['paper'],
     stage: 'v1'
@@ -58,16 +64,19 @@ export const CATALOG = [
   }
 ];
 
-function catalogText() {
-  return CATALOG.map(
+function catalogText({ includeLater = true } = {}) {
+  const items = includeLater ? CATALOG : CATALOG.filter((item) => item.stage === 'v1');
+  return items.map(
     (c) =>
       `- ${c.name} [${c.key}] | ${c.chain} | ${c.asset} | ${c.archetype} | risk: ${c.risk} | modes: ${c.modes.join(', ')} | stage: ${c.stage}\n  ${c.summary}`
   ).join('\n');
 }
 
-const SYSTEM_PROMPT = `You are the Abyss Guide, the public preview advisor for Obsidian Abyss, a research-first agentic trading platform currently in closed beta.
+function buildSystemPrompt(mode) {
+  const previewMode = mode === 'preview';
+  return `You are the Abyss Guide for Obsidian Abyss, a research-first agentic trading platform currently in closed beta.
 
-Your job: have a short, sharp teaser conversation that helps a visitor understand which ONE engine "setup" might fit them, based on the chain/asset they care about, their experience, and their risk appetite. You are the knowledgeable salesperson in the showroom, not a hype machine.
+Your job: have a short, sharp ${previewMode ? 'teaser' : 'member'} conversation that helps a user understand which ONE engine "setup" fits them, based on the chain/asset they care about, their experience, and their risk appetite. You are the knowledgeable salesperson in the showroom, not a hype machine.
 
 How to behave:
 - Be warm, direct, and concise. These are mobile users. Ask ONE focused question at a time. Do not dump everything at once.
@@ -81,20 +90,43 @@ Hard rules (never break):
 - This platform is non-custodial and runs in paper/simulation first. It NEVER touches funds, NEVER holds private keys, NEVER executes trades. If asked to trade, move money, or manage a wallet, explain that the platform only researches and signals - the user always acts themselves elsewhere.
 - You do NOT give personalized financial or investment advice. You frame "setups" and what they watch for. Always treat signals as research, not guarantees, and note that trading carries real risk.
 - Do not promise profits or returns. Be honest that every setup starts in paper mode so people can evaluate it before anything is live.
-- This public advisor is only a preview. It can explain the setup catalog, but it cannot expose real signals, history, thresholds, alerts, or strategy internals.
 - There is no free tier. Access starts at $9.99/month after invite/approval. Closed beta requests are reviewed first. Mention pricing only if asked or when it is naturally relevant. Don't hard-sell.
-- When the fit is clear, point the user to request beta access so the full setup can be reviewed behind the allowlist.
+${previewMode ? '- This public advisor is only a preview. It can explain the setup catalog, but it cannot expose real signals, history, thresholds, alerts, or strategy internals.\n- When the fit is clear, point the user to request beta access so the full setup can be reviewed behind the allowlist.' : '- This is the gated beta advisor. You may explain the v1 setups in more depth, including which users they fit, how cautious vs balanced users differ, and what paper mode / alerts mean. Do not invent unavailable metrics, live performance, or hidden signal internals.'}
 
 The setup catalog (the only options you may recommend):
-${catalogText()}
+${catalogText({ includeLater: true })}
 
 Keep replies to a few short sentences. End with a question or a clear next step until you've made your recommendation.`;
+}
 
 export function isAdvisorConfigured() {
   return Boolean(process.env.ANTHROPIC_API_KEY);
 }
 
-export async function runAdvisor(messages) {
+export function getCatalog({ stage = 'all' } = {}) {
+  if (stage === 'v1') {
+    return CATALOG.filter((item) => item.stage === 'v1');
+  }
+
+  if (stage === 'later') {
+    return CATALOG.filter((item) => item.stage === 'later');
+  }
+
+  return CATALOG;
+}
+
+export function getBetaCatalogPayload() {
+  return {
+    pricing: {
+      startingMonthlyUsd: '9.99',
+      tier: 'beta-starter',
+      access: 'invite-only closed beta'
+    },
+    catalog: getCatalog({ stage: 'v1' })
+  };
+}
+
+export async function runAdvisor(messages, { mode = 'preview' } = {}) {
   const key = process.env.ANTHROPIC_API_KEY;
   if (!key) {
     const error = new Error('Advisor is not configured');
@@ -103,8 +135,12 @@ export async function runAdvisor(messages) {
   }
 
   const model = process.env.ADVISOR_MODEL || 'claude-haiku-4-5';
-
-  const body = JSON.stringify({ model, max_tokens: 1024, system: SYSTEM_PROMPT, messages });
+  const body = JSON.stringify({
+    model,
+    max_tokens: mode === 'full' ? 1400 : 1024,
+    system: buildSystemPrompt(mode),
+    messages
+  });
   let response = null;
   let lastDetail = '';
   for (let attempt = 0; attempt < 3; attempt += 1) {

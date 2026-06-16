@@ -87,3 +87,34 @@ export async function sendWalletBetaNotification({ request, submission }) {
 
   return { sent: true };
 }
+
+export async function sendBetaInviteEmail({ email, name, inviteUrl, expiresAt }) {
+  if (!transporter) {
+    return { sent: false, reason: 'mail_not_configured' };
+  }
+
+  await transporter.sendMail({
+    from: mailFrom,
+    to: email,
+    replyTo: mailFrom,
+    subject: 'Your Obsidian Abyss closed beta access link',
+    text: [
+      `Hello ${name || 'there'},`,
+      '',
+      'Your Obsidian Abyss closed beta access is ready.',
+      'This link opens the gated beta area and redeems your invite:',
+      inviteUrl,
+      '',
+      `This invite expires: ${expiresAt}`,
+      '',
+      'Access starts in paper mode and remains research-only.',
+      'No wallet keys, custody, or autonomous live trading are enabled through this invite.',
+      '',
+      'If the link expires, reply to this email and we can issue a fresh one.',
+      '',
+      'Obsidian Abyss'
+    ].join('\n')
+  });
+
+  return { sent: true };
+}

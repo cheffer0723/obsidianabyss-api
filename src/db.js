@@ -101,6 +101,74 @@ export async function initializeDatabase() {
   `);
 
   await pool.query(`
+    CREATE TABLE IF NOT EXISTS beta_access_members (
+      id BIGSERIAL PRIMARY KEY,
+      email TEXT NOT NULL UNIQUE,
+      name TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'invited',
+      access_tier TEXT NOT NULL DEFAULT 'beta-starter',
+      source_request_type TEXT,
+      source_request_id BIGINT,
+      granted_at TIMESTAMPTZ,
+      last_login_at TIMESTAMPTZ,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+  `);
+
+  await pool.query(`
+    ALTER TABLE beta_access_members
+    ADD COLUMN IF NOT EXISTS status TEXT NOT NULL DEFAULT 'invited',
+    ADD COLUMN IF NOT EXISTS access_tier TEXT NOT NULL DEFAULT 'beta-starter',
+    ADD COLUMN IF NOT EXISTS source_request_type TEXT,
+    ADD COLUMN IF NOT EXISTS source_request_id BIGINT,
+    ADD COLUMN IF NOT EXISTS granted_at TIMESTAMPTZ,
+    ADD COLUMN IF NOT EXISTS last_login_at TIMESTAMPTZ,
+    ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW();
+  `);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS beta_access_invites (
+      id BIGSERIAL PRIMARY KEY,
+      member_id BIGINT NOT NULL REFERENCES beta_access_members(id) ON DELETE CASCADE,
+      request_type TEXT NOT NULL,
+      request_id BIGINT NOT NULL,
+      email TEXT NOT NULL,
+      invite_token_hash TEXT NOT NULL UNIQUE,
+      status TEXT NOT NULL DEFAULT 'created',
+      expires_at TIMESTAMPTZ NOT NULL,
+      sent_at TIMESTAMPTZ,
+      redeemed_at TIMESTAMPTZ,
+      revoked_at TIMESTAMPTZ,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+  `);
+
+  await pool.query(`
+    ALTER TABLE beta_access_invites
+    ADD COLUMN IF NOT EXISTS status TEXT NOT NULL DEFAULT 'created',
+    ADD COLUMN IF NOT EXISTS sent_at TIMESTAMPTZ,
+    ADD COLUMN IF NOT EXISTS redeemed_at TIMESTAMPTZ,
+    ADD COLUMN IF NOT EXISTS revoked_at TIMESTAMPTZ;
+  `);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS beta_access_sessions (
+      id BIGSERIAL PRIMARY KEY,
+      member_id BIGINT NOT NULL REFERENCES beta_access_members(id) ON DELETE CASCADE,
+      session_token_hash TEXT NOT NULL UNIQUE,
+      expires_at TIMESTAMPTZ NOT NULL,
+      last_used_at TIMESTAMPTZ,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+  `);
+
+  await pool.query(`
+    ALTER TABLE beta_access_sessions
+    ADD COLUMN IF NOT EXISTS last_used_at TIMESTAMPTZ;
+  `);
+
+  await pool.query(`
     CREATE TABLE IF NOT EXISTS strategies (
       id BIGSERIAL PRIMARY KEY,
       strategy_key TEXT NOT NULL UNIQUE,
@@ -306,7 +374,24 @@ export async function listContactRequests({ limit = 50 } = {}) {
     `
       SELECT id, name, email, message, status, status_updated_at, created_at
       , experience_level, access_mode, preferred_assets, preferred_exchange, automation_comfort, admin_notes, notes_updated_at
+      , beta.beta_member_status, beta.beta_access_tier, beta.beta_member_last_login_at
+      , beta.beta_invite_status, beta.beta_invite_sent_at, beta.beta_invite_expires_at, beta.beta_invite_redeemed_at
       FROM contact_requests
+      LEFT JOIN LATERAL (
+        SELECT
+          bam.status AS beta_member_status,
+          bam.access_tier AS beta_access_tier,
+          bam.last_login_at AS beta_member_last_login_at,
+          bai.status AS beta_invite_status,
+          bai.sent_at AS beta_invite_sent_at,
+          bai.expires_at AS beta_invite_expires_at,
+          bai.redeemed_at AS beta_invite_redeemed_at
+        FROM beta_access_invites bai
+        JOIN beta_access_members bam ON bam.id = bai.member_id
+        WHERE bai.request_type = 'contact' AND bai.request_id = contact_requests.id
+        ORDER BY bai.created_at DESC
+        LIMIT 1
+      ) beta ON TRUE
       ORDER BY created_at DESC
       LIMIT $1;
     `,
@@ -323,7 +408,24 @@ export async function listWalletBetaRequests({ limit = 50 } = {}) {
     `
       SELECT id, name, email, wallet_address, notes, status, status_updated_at, created_at
       , experience_level, access_mode, preferred_assets, preferred_exchange, automation_comfort, admin_notes, notes_updated_at
+      , beta.beta_member_status, beta.beta_access_tier, beta.beta_member_last_login_at
+      , beta.beta_invite_status, beta.beta_invite_sent_at, beta.beta_invite_expires_at, beta.beta_invite_redeemed_at
       FROM wallet_beta_requests
+      LEFT JOIN LATERAL (
+        SELECT
+          bam.status AS beta_member_status,
+          bam.access_tier AS beta_access_tier,
+          bam.last_login_at AS beta_member_last_login_at,
+          bai.status AS beta_invite_status,
+          bai.sent_at AS beta_invite_sent_at,
+          bai.expires_at AS beta_invite_expires_at,
+          bai.redeemed_at AS beta_invite_redeemed_at
+        FROM beta_access_invites bai
+        JOIN beta_access_members bam ON bam.id = bai.member_id
+        WHERE bai.request_type = 'wallet' AND bai.request_id = wallet_beta_requests.id
+        ORDER BY bai.created_at DESC
+        LIMIT 1
+      ) beta ON TRUE
       ORDER BY created_at DESC
       LIMIT $1;
     `,
@@ -395,6 +497,334 @@ export async function updateWalletBetaRequestNotes({ id, adminNotes }) {
   );
 
   return result.rows[0] || null;
+}
+
+export async function getContactRequestForInvite(id) {
+  assertDatabaseConfigured();
+
+  const result = await pool.query(
+    `
+      SELECT id, name, email, status
+      FROM contact_requests
+      WHERE id = $1;
+    `,
+    [id]
+  );
+
+  return result.rows[0] || null;
+}
+
+export async function getWalletBetaRequestForInvite(id) {
+  assertDatabaseConfigured();
+
+  const result = await pool.query(
+    `
+      SELECT id, name, email, status
+      FROM wallet_beta_requests
+      WHERE id = $1;
+    `,
+    [id]
+  );
+
+  return result.rows[0] || null;
+}
+
+export async function createBetaAccessInvite({
+  requestType,
+  requestId,
+  name,
+  email,
+  inviteTokenHash,
+  expiresAt
+}) {
+  assertDatabaseConfigured();
+  const client = await pool.connect();
+
+  try {
+    await client.query('BEGIN');
+
+    const memberResult = await client.query(
+      `
+        INSERT INTO beta_access_members (
+          email,
+          name,
+          status,
+          access_tier,
+          source_request_type,
+          source_request_id
+        )
+        VALUES ($1, $2, 'invited', 'beta-starter', $3, $4)
+        ON CONFLICT (email) DO UPDATE
+        SET
+          name = EXCLUDED.name,
+          source_request_type = EXCLUDED.source_request_type,
+          source_request_id = EXCLUDED.source_request_id,
+          updated_at = NOW()
+        RETURNING id, email, name, status, access_tier, granted_at, last_login_at, created_at;
+      `,
+      [email, name, requestType, requestId]
+    );
+
+    const member = memberResult.rows[0];
+    const inviteResult = await client.query(
+      `
+        INSERT INTO beta_access_invites (
+          member_id,
+          request_type,
+          request_id,
+          email,
+          invite_token_hash,
+          status,
+          expires_at
+        )
+        VALUES ($1, $2, $3, $4, $5, 'created', $6)
+        RETURNING id, member_id, request_type, request_id, email, status, expires_at, sent_at, redeemed_at, created_at;
+      `,
+      [member.id, requestType, requestId, email, inviteTokenHash, expiresAt]
+    );
+
+    await client.query('COMMIT');
+    return { member, invite: inviteResult.rows[0] };
+  } catch (error) {
+    await client.query('ROLLBACK');
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
+export async function markBetaAccessInviteSent(inviteId) {
+  assertDatabaseConfigured();
+
+  const result = await pool.query(
+    `
+      UPDATE beta_access_invites
+      SET status = 'sent', sent_at = NOW()
+      WHERE id = $1
+      RETURNING id, status, sent_at;
+    `,
+    [inviteId]
+  );
+
+  return result.rows[0] || null;
+}
+
+export async function redeemBetaAccessInvite({
+  inviteTokenHash,
+  sessionTokenHash,
+  sessionExpiresAt
+}) {
+  assertDatabaseConfigured();
+  const client = await pool.connect();
+
+  try {
+    await client.query('BEGIN');
+
+    const inviteResult = await client.query(
+      `
+        SELECT
+          bai.id,
+          bai.member_id,
+          bai.email,
+          bai.status,
+          bai.expires_at,
+          bai.redeemed_at,
+          bam.name,
+          bam.status AS member_status,
+          bam.access_tier,
+          bam.granted_at
+        FROM beta_access_invites bai
+        JOIN beta_access_members bam ON bam.id = bai.member_id
+        WHERE bai.invite_token_hash = $1
+        LIMIT 1
+        FOR UPDATE;
+      `,
+      [inviteTokenHash]
+    );
+
+    const invite = inviteResult.rows[0];
+    if (!invite) {
+      await client.query('ROLLBACK');
+      return { state: 'missing' };
+    }
+
+    if (invite.status === 'revoked') {
+      await client.query('ROLLBACK');
+      return { state: 'revoked' };
+    }
+
+    if (invite.redeemed_at || invite.status === 'redeemed') {
+      await client.query('ROLLBACK');
+      return { state: 'redeemed' };
+    }
+
+    if (new Date(invite.expires_at) <= new Date()) {
+      await client.query(
+        `
+          UPDATE beta_access_invites
+          SET status = 'expired'
+          WHERE id = $1 AND status <> 'expired';
+        `,
+        [invite.id]
+      );
+      await client.query('COMMIT');
+      return { state: 'expired' };
+    }
+
+    await client.query(
+      `
+        UPDATE beta_access_invites
+        SET status = 'redeemed', redeemed_at = NOW()
+        WHERE id = $1;
+      `,
+      [invite.id]
+    );
+
+    const memberResult = await client.query(
+      `
+        UPDATE beta_access_members
+        SET
+          status = 'active',
+          granted_at = COALESCE(granted_at, NOW()),
+          last_login_at = NOW(),
+          updated_at = NOW()
+        WHERE id = $1
+        RETURNING id, email, name, status, access_tier, granted_at, last_login_at, created_at;
+      `,
+      [invite.member_id]
+    );
+
+    const member = memberResult.rows[0];
+    const sessionResult = await client.query(
+      `
+        INSERT INTO beta_access_sessions (member_id, session_token_hash, expires_at, last_used_at)
+        VALUES ($1, $2, $3, NOW())
+        RETURNING id, expires_at, created_at;
+      `,
+      [member.id, sessionTokenHash, sessionExpiresAt]
+    );
+
+    await client.query('COMMIT');
+    return { state: 'ok', member, session: sessionResult.rows[0] };
+  } catch (error) {
+    await client.query('ROLLBACK');
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
+export async function getBetaAccessSession(sessionTokenHash) {
+  assertDatabaseConfigured();
+  const client = await pool.connect();
+
+  try {
+    await client.query('BEGIN');
+    const result = await client.query(
+      `
+        SELECT
+          bas.id AS session_id,
+          bas.expires_at AS session_expires_at,
+          bam.id,
+          bam.email,
+          bam.name,
+          bam.status,
+          bam.access_tier,
+          bam.granted_at,
+          bam.last_login_at,
+          bam.created_at
+        FROM beta_access_sessions bas
+        JOIN beta_access_members bam ON bam.id = bas.member_id
+        WHERE bas.session_token_hash = $1
+          AND bas.expires_at > NOW()
+          AND bam.status = 'active'
+        LIMIT 1
+        FOR UPDATE;
+      `,
+      [sessionTokenHash]
+    );
+
+    const session = result.rows[0];
+    if (!session) {
+      await client.query('ROLLBACK');
+      return null;
+    }
+
+    await client.query(
+      `
+        UPDATE beta_access_sessions
+        SET last_used_at = NOW()
+        WHERE id = $1;
+      `,
+      [session.session_id]
+    );
+
+    await client.query(
+      `
+        UPDATE beta_access_members
+        SET last_login_at = NOW(), updated_at = NOW()
+        WHERE id = $1;
+      `,
+      [session.id]
+    );
+
+    await client.query('COMMIT');
+    return session;
+  } catch (error) {
+    await client.query('ROLLBACK');
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
+export async function deleteBetaAccessSession(sessionTokenHash) {
+  assertDatabaseConfigured();
+
+  await pool.query(
+    `
+      DELETE FROM beta_access_sessions
+      WHERE session_token_hash = $1;
+    `,
+    [sessionTokenHash]
+  );
+}
+
+export async function listBetaMembers({ limit = 50 } = {}) {
+  assertDatabaseConfigured();
+
+  const result = await pool.query(
+    `
+      SELECT
+        bam.id,
+        bam.email,
+        bam.name,
+        bam.status,
+        bam.access_tier,
+        bam.source_request_type,
+        bam.source_request_id,
+        bam.granted_at,
+        bam.last_login_at,
+        bam.created_at,
+        invite.status AS latest_invite_status,
+        invite.sent_at AS latest_invite_sent_at,
+        invite.expires_at AS latest_invite_expires_at,
+        invite.redeemed_at AS latest_invite_redeemed_at
+      FROM beta_access_members bam
+      LEFT JOIN LATERAL (
+        SELECT status, sent_at, expires_at, redeemed_at
+        FROM beta_access_invites
+        WHERE member_id = bam.id
+        ORDER BY created_at DESC
+        LIMIT 1
+      ) invite ON TRUE
+      ORDER BY bam.created_at DESC
+      LIMIT $1;
+    `,
+    [limit]
+  );
+
+  return result.rows;
 }
 
 export async function listStrategies({ limit = 50 } = {}) {

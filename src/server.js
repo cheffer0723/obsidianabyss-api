@@ -1,16 +1,23 @@
 import 'dotenv/config';
+import crypto from 'node:crypto';
 import express from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
 import rateLimit from 'express-rate-limit';
 import { z } from 'zod';
 import {
+  createBetaAccessInvite,
   createContactRequest,
   createWalletBetaRequest,
+  deleteBetaAccessSession,
+  getBetaAccessSession,
+  getContactRequestForInvite,
   getTestnetConnector,
+  getWalletBetaRequestForInvite,
   initializeDatabase,
   isDatabaseConfigured,
   listAgentRuns,
+  listBetaMembers,
   listContactRequests,
   listExecutionIntents,
   listRiskChecks,
@@ -19,7 +26,9 @@ import {
   listTestnetConnectors,
   listTestnetTransactions,
   listWalletBetaRequests,
+  markBetaAccessInviteSent,
   recordTestnetBalanceCheck,
+  redeemBetaAccessInvite,
   updateContactRequestNotes,
   updateContactRequestStatus,
   updateWalletBetaRequestNotes,
@@ -28,10 +37,11 @@ import {
 import { readBaseSepoliaBalance } from './baseSepolia.js';
 import {
   isMailConfigured,
+  sendBetaInviteEmail,
   sendContactNotification,
   sendWalletBetaNotification
 } from './mail.js';
-import { isAdvisorConfigured, runAdvisor } from './advisor.js';
+import { getBetaCatalogPayload, isAdvisorConfigured, runAdvisor } from './advisor.js';
 
 const app = express();
 const port = Number(process.env.PORT || 3001);
@@ -46,6 +56,11 @@ const allowedOrigins = (process.env.ALLOWED_ORIGINS || defaultAllowedOrigins.joi
   .map((origin) => origin.trim())
   .filter(Boolean);
 const adminToken = process.env.ADMIN_TOKEN;
+const betaAppUrl = process.env.BETA_APP_URL || 'https://www.obsidianabyss.com/beta.html';
+const betaSessionCookieName = process.env.BETA_SESSION_COOKIE_NAME || 'obsidian_beta_session';
+const betaInviteHours = Number(process.env.BETA_INVITE_HOURS || 168);
+const betaSessionHours = Number(process.env.BETA_SESSION_HOURS || 336);
+const betaEligibleStatuses = new Set(['approved', 'beta-ready', 'accepted']);
 const submissionLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   limit: 12,
@@ -66,6 +81,16 @@ const advisorLimiter = rateLimit({
     error: 'Too many advisor requests. Please slow down and try again shortly.'
   }
 });
+const betaRedeemLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 12,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: {
+    ok: false,
+    error: 'Too many beta access attempts. Please try again later.'
+  }
+});
 
 app.disable('x-powered-by');
 app.set('trust proxy', 1);
@@ -80,7 +105,8 @@ app.use(
       }
 
       callback(new Error('Origin is not allowed by CORS'));
-    }
+    },
+    credentials: true
   })
 );
 
@@ -118,6 +144,12 @@ const adminStatusSchema = z.object({
 const adminNotesSchema = z.object({
   adminNotes: z.string().trim().max(4000).optional().or(z.literal(''))
 });
+const betaInviteSchema = z.object({
+  expiresHours: z.coerce.number().int().min(1).max(24 * 30).optional()
+});
+const betaRedeemSchema = z.object({
+  inviteToken: z.string().trim().min(32).max(512)
+});
 const idParamSchema = z.object({
   id: z.coerce.number().int().positive()
 });
@@ -151,6 +183,9 @@ app.get('/health', (_req, res) => {
     },
     advisor: {
       configured: isAdvisorConfigured()
+    },
+    betaAccess: {
+      enabled: isDatabaseConfigured()
     },
     timestamp: new Date().toISOString()
   });
@@ -331,6 +366,89 @@ app.patch('/admin/wallet-beta-requests/:id/notes', requireAdmin, async (req, res
   }
 });
 
+app.post('/admin/contact-requests/:id/invite', requireAdmin, async (req, res, next) => {
+  const params = validate(idParamSchema, req.params);
+  const body = validate(betaInviteSchema, req.body || {});
+  if (params.error || body.error) {
+    res.status(400).json({ ok: false, errors: [...(params.error || []), ...(body.error || [])] });
+    return;
+  }
+
+  try {
+    const request = await getContactRequestForInvite(params.data.id);
+    if (!request) {
+      res.status(404).json({ ok: false, error: 'Contact request not found' });
+      return;
+    }
+
+    if (!betaEligibleStatuses.has(request.status)) {
+      res.status(409).json({ ok: false, error: 'Request must be approved before invite issuance.' });
+      return;
+    }
+
+    const invite = await issueBetaInvite({
+      requestType: 'contact',
+      requestId: request.id,
+      name: request.name,
+      email: request.email,
+      expiresHours: body.data.expiresHours
+    });
+
+    res.status(201).json({ ok: true, ...invite });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.post('/admin/wallet-beta-requests/:id/invite', requireAdmin, async (req, res, next) => {
+  const params = validate(idParamSchema, req.params);
+  const body = validate(betaInviteSchema, req.body || {});
+  if (params.error || body.error) {
+    res.status(400).json({ ok: false, errors: [...(params.error || []), ...(body.error || [])] });
+    return;
+  }
+
+  try {
+    const request = await getWalletBetaRequestForInvite(params.data.id);
+    if (!request) {
+      res.status(404).json({ ok: false, error: 'Wallet beta request not found' });
+      return;
+    }
+
+    if (!betaEligibleStatuses.has(request.status)) {
+      res.status(409).json({ ok: false, error: 'Request must be approved before invite issuance.' });
+      return;
+    }
+
+    const invite = await issueBetaInvite({
+      requestType: 'wallet',
+      requestId: request.id,
+      name: request.name,
+      email: request.email,
+      expiresHours: body.data.expiresHours
+    });
+
+    res.status(201).json({ ok: true, ...invite });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.get('/admin/beta-members', requireAdmin, async (req, res, next) => {
+  const result = validate(adminListSchema, req.query);
+  if (result.error) {
+    res.status(400).json({ ok: false, errors: result.error });
+    return;
+  }
+
+  try {
+    const members = await listBetaMembers({ limit: result.data.limit });
+    res.json({ ok: true, members });
+  } catch (error) {
+    next(error);
+  }
+});
+
 app.get('/admin/strategies', requireAdmin, async (req, res, next) => {
   const result = validate(adminListSchema, req.query);
   if (result.error) {
@@ -479,7 +597,7 @@ app.get('/admin/testnet/transactions', requireAdmin, async (req, res, next) => {
   }
 });
 
-const advisorSchema = z.object({
+const previewAdvisorSchema = z.object({
   messages: z
     .array(
       z.object({
@@ -493,7 +611,7 @@ const advisorSchema = z.object({
 });
 
 app.post('/advisor/message', advisorLimiter, async (req, res, next) => {
-  const result = validate(advisorSchema, req.body);
+  const result = validate(previewAdvisorSchema, req.body);
   if (result.error) {
     res.status(400).json({ ok: false, errors: result.error });
     return;
@@ -505,8 +623,108 @@ app.post('/advisor/message', advisorLimiter, async (req, res, next) => {
   }
 
   try {
-    const reply = await runAdvisor(result.data.messages);
+    const reply = await runAdvisor(result.data.messages, { mode: 'preview' });
     res.json({ ok: true, mode: 'preview', reply });
+  } catch (error) {
+    next(error);
+  }
+});
+
+const betaAdvisorSchema = z.object({
+  messages: z
+    .array(
+      z.object({
+        role: z.enum(['user', 'assistant']),
+        content: z.string().trim().min(1).max(2000)
+      })
+    )
+    .min(1)
+    .max(16),
+  mode: z.literal('full').optional()
+});
+
+app.post('/beta/invites/redeem', betaRedeemLimiter, async (req, res, next) => {
+  const result = validate(betaRedeemSchema, req.body);
+  if (result.error) {
+    res.status(400).json({ ok: false, errors: result.error });
+    return;
+  }
+
+  try {
+    const sessionToken = createOpaqueToken();
+    const redeemed = await redeemBetaAccessInvite({
+      inviteTokenHash: hashToken(result.data.inviteToken),
+      sessionTokenHash: hashToken(sessionToken),
+      sessionExpiresAt: getFutureIsoHours(betaSessionHours)
+    });
+
+    if (redeemed.state === 'missing') {
+      res.status(404).json({ ok: false, error: 'Invite not found' });
+      return;
+    }
+
+    if (redeemed.state === 'expired') {
+      res.status(410).json({ ok: false, error: 'Invite expired' });
+      return;
+    }
+
+    if (redeemed.state === 'redeemed') {
+      res.status(409).json({ ok: false, error: 'Invite already redeemed' });
+      return;
+    }
+
+    if (redeemed.state === 'revoked') {
+      res.status(410).json({ ok: false, error: 'Invite revoked' });
+      return;
+    }
+
+    if (redeemed.state !== 'ok') {
+      res.status(409).json({ ok: false, error: 'Invite could not be redeemed' });
+      return;
+    }
+
+    setBetaSessionCookie(req, res, sessionToken);
+    res.json({ ok: true, member: mapBetaMember(redeemed.member), sessionToken });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.get('/beta/session', requireBetaMember, (req, res) => {
+  res.json({ ok: true, member: mapBetaMember(req.betaMember) });
+});
+
+app.post('/beta/logout', (req, res) => {
+  const tokens = readBetaSessionTokens(req);
+  if (tokens.length) {
+    Promise.all(tokens.map((token) => deleteBetaAccessSession(hashToken(token)))).catch((error) => {
+      console.error('Beta session delete failed:', error.message);
+    });
+  }
+
+  clearBetaSessionCookie(req, res);
+  res.json({ ok: true });
+});
+
+app.get('/beta/catalog', requireBetaMember, (_req, res) => {
+  res.json({ ok: true, ...getBetaCatalogPayload() });
+});
+
+app.post('/beta/advisor/message', requireBetaMember, advisorLimiter, async (req, res, next) => {
+  const result = validate(betaAdvisorSchema, req.body);
+  if (result.error) {
+    res.status(400).json({ ok: false, errors: result.error });
+    return;
+  }
+
+  if (result.data.messages[0].role !== 'user') {
+    res.status(400).json({ ok: false, error: 'Conversation must start with a user message.' });
+    return;
+  }
+
+  try {
+    const reply = await runAdvisor(result.data.messages, { mode: 'full' });
+    res.json({ ok: true, mode: 'full', member: mapBetaMember(req.betaMember), reply });
   } catch (error) {
     next(error);
   }
@@ -551,6 +769,158 @@ function requireAdmin(req, res, next) {
   }
 
   next();
+}
+
+async function requireBetaMember(req, res, next) {
+  const tokens = readBetaSessionTokens(req);
+  if (!tokens.length) {
+    res.status(401).json({ ok: false, error: 'Beta access required' });
+    return;
+  }
+
+  try {
+    let member = null;
+    for (const token of tokens) {
+      member = await getBetaAccessSession(hashToken(token));
+      if (member) {
+        break;
+      }
+    }
+
+    if (!member) {
+      clearBetaSessionCookie(req, res);
+      res.status(401).json({ ok: false, error: 'Beta session expired' });
+      return;
+    }
+
+    req.betaMember = member;
+    next();
+  } catch (error) {
+    next(error);
+  }
+}
+
+async function issueBetaInvite({ requestType, requestId, name, email, expiresHours }) {
+  const inviteToken = createOpaqueToken();
+  const expiresAt = getFutureIsoHours(expiresHours || betaInviteHours);
+  const created = await createBetaAccessInvite({
+    requestType,
+    requestId,
+    name,
+    email,
+    inviteTokenHash: hashToken(inviteToken),
+    expiresAt
+  });
+
+  const inviteUrl = buildInviteUrl(inviteToken);
+  const notification = await notifySafely(() =>
+    sendBetaInviteEmail({
+      email,
+      name,
+      inviteUrl,
+      expiresAt
+    })
+  );
+
+  let invite = created.invite;
+  if (notification.sent) {
+    invite = {
+      ...invite,
+      ...(await markBetaAccessInviteSent(invite.id))
+    };
+  }
+
+  return {
+    member: mapBetaMember(created.member),
+    invite,
+    inviteUrl,
+    notification
+  };
+}
+
+function mapBetaMember(member) {
+  return {
+    id: member.id,
+    email: member.email,
+    name: member.name,
+    status: member.status,
+    accessTier: member.access_tier,
+    grantedAt: member.granted_at || null,
+    lastLoginAt: member.last_login_at || member.beta_member_last_login_at || null,
+    createdAt: member.created_at || null
+  };
+}
+
+function buildInviteUrl(inviteToken) {
+  const url = new URL(betaAppUrl);
+  url.searchParams.set('invite', inviteToken);
+  return url.toString();
+}
+
+function createOpaqueToken() {
+  return crypto.randomBytes(32).toString('hex');
+}
+
+function hashToken(value) {
+  return crypto.createHash('sha256').update(value).digest('hex');
+}
+
+function getFutureIsoHours(hours) {
+  return new Date(Date.now() + hours * 60 * 60 * 1000).toISOString();
+}
+
+function readBetaSessionTokens(req) {
+  const tokens = [];
+  const authHeader = req.get('authorization') || '';
+  if (authHeader.startsWith('Bearer ')) {
+    tokens.push(authHeader.slice(7));
+  }
+
+  const cookies = parseCookieHeader(req.get('cookie') || '');
+  if (cookies[betaSessionCookieName]) {
+    tokens.push(cookies[betaSessionCookieName]);
+  }
+
+  return [...new Set(tokens.filter(Boolean))];
+}
+
+function parseCookieHeader(header) {
+  return header
+    .split(';')
+    .map((entry) => entry.trim())
+    .filter(Boolean)
+    .reduce((acc, entry) => {
+      const index = entry.indexOf('=');
+      if (index === -1) {
+        return acc;
+      }
+
+      const key = entry.slice(0, index).trim();
+      const value = entry.slice(index + 1).trim();
+      acc[key] = decodeURIComponent(value);
+      return acc;
+    }, {});
+}
+
+function setBetaSessionCookie(req, res, sessionToken) {
+  res.cookie(betaSessionCookieName, sessionToken, {
+    ...getBetaCookieOptions(req),
+    maxAge: betaSessionHours * 60 * 60 * 1000
+  });
+}
+
+function clearBetaSessionCookie(req, res) {
+  res.clearCookie(betaSessionCookieName, getBetaCookieOptions(req));
+}
+
+function getBetaCookieOptions(req) {
+  const isSecure = req.secure || req.get('x-forwarded-proto') === 'https';
+  return {
+    httpOnly: true,
+    secure: isSecure,
+    sameSite: isSecure ? 'none' : 'lax',
+    path: '/'
+  };
 }
 
 async function notifySafely(sendNotification) {

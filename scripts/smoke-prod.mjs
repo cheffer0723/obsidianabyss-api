@@ -8,6 +8,7 @@ const SITE_URLS = [
   'https://www.obsidianabyss.com/',
   'https://obsidianabyss.com/admin.html',
   'https://www.obsidianabyss.com/admin.html',
+  'https://www.obsidianabyss.com/beta.html',
   'https://www.obsidianabyss.com/risk.html',
   'https://www.obsidianabyss.com/privacy.html',
   'https://www.obsidianabyss.com/terms.html',
@@ -33,6 +34,7 @@ await checkAdminList('/admin/strategies', 'strategy admin list', 'strategies');
 await checkAdminList('/admin/execution-intents', 'execution intent admin list', 'intents');
 await checkAdminList('/admin/risk-checks', 'risk check admin list', 'checks');
 await checkAdminList('/admin/agent-runs', 'agent run admin list', 'runs');
+await checkAdminList('/admin/beta-members', 'beta members admin list', 'members');
 await checkAdminList('/admin/testnet/connectors', 'testnet connector admin list', 'connectors');
 await checkAdminList('/admin/testnet/balance-checks', 'testnet balance admin list', 'checks');
 await checkAdminList('/admin/testnet/transactions', 'testnet transaction admin list', 'transactions');
