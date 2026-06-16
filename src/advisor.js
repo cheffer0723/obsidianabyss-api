@@ -94,7 +94,7 @@ export async function runAdvisor(messages) {
     throw error;
   }
 
-  const model = process.env.ADVISOR_MODEL || 'claude-sonnet-4-6';
+  const model = process.env.ADVISOR_MODEL || 'claude-haiku-4-5';
 
   const body = JSON.stringify({ model, max_tokens: 1024, system: SYSTEM_PROMPT, messages });
   let response = null;

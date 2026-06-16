@@ -118,7 +118,7 @@ The advisor endpoint powers the public Abyss Guide chat. It recommends one setup
 Set these variables to enable it:
 
 - `ANTHROPIC_API_KEY=<api key>`
-- `ADVISOR_MODEL=claude-sonnet-4-6` optional; defaults to `claude-sonnet-4-6`
+- `ADVISOR_MODEL=claude-haiku-4-5` optional; defaults to `claude-haiku-4-5`
 
 Request:
 
