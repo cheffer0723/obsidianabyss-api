@@ -242,7 +242,7 @@ export async function createContactRequest({
     [
       name,
       email,
-      message,
+      message || '',
       experienceLevel || '',
       accessMode || '',
       preferredAssets || '',
