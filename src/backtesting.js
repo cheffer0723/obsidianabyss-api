@@ -262,6 +262,7 @@ export function getBacktestingPayload({ strategies = [], runs = [] } = {}) {
     lastUpdatedAt: new Date().toISOString()
   };
 }
+
 function createFallbackPreset(item) {
   return {
     curve: [30, 34, 39, 43, 47, 52, 56, 60, 64],
@@ -278,4 +279,9 @@ function createFallbackPreset(item) {
         metrics: [
           { label: 'Engine', value: item.name },
           { label: 'Mode', value: item.modes.join(' / ') },
-          { label: 'State',
+          { label: 'State', value: 'synthetic preview' }
+          ]
+        }
+      ]
+    };
+  }
