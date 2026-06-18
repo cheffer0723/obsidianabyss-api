@@ -42,6 +42,7 @@ import {
   sendWalletBetaNotification
 } from './mail.js';
 import { getBetaCatalogPayload, isAdvisorConfigured, runAdvisor } from './advisor.js';
+import { getBacktestingPayload } from './backtesting.js';
 
 const app = express();
 const port = Number(process.env.PORT || 3001);
@@ -710,6 +711,65 @@ app.get('/beta/catalog', requireBetaMember, (_req, res) => {
   res.json({ ok: true, ...getBetaCatalogPayload() });
 });
 
+app.get('/beta/dashboard', requireBetaMember, async (req, res, next) => {
+  try {
+    const betaPayload = getBetaCatalogPayload();
+    const [
+      strategies,
+      intents,
+      riskChecks,
+      runs,
+      connectors,
+      balanceChecks,
+      transactions
+    ] = await Promise.all([
+      listStrategies({ limit: 6 }),
+      listExecutionIntents({ limit: 6 }),
+      listRiskChecks({ limit: 6 }),
+      listAgentRuns({ limit: 6 }),
+      listTestnetConnectors({ limit: 4 }),
+      listTestnetBalanceChecks({ limit: 4 }),
+      listTestnetTransactions({ limit: 4 })
+    ]);
+
+    res.json({
+      ok: true,
+      member: mapBetaMember(req.betaMember),
+      ...betaPayload,
+      dashboard: buildBetaDashboardPayload({
+        pricing: betaPayload.pricing,
+        catalog: betaPayload.catalog,
+        strategies,
+        intents,
+        riskChecks,
+        runs,
+        connectors,
+        balanceChecks,
+        transactions
+      })
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.get('/beta/backtesting', requireBetaMember, async (req, res, next) => {
+  try {
+    const [strategies, runs] = await Promise.all([
+      listStrategies({ limit: 12 }),
+      listAgentRuns({ limit: 12 })
+    ]);
+
+    res.json({
+      ok: true,
+      member: mapBetaMember(req.betaMember),
+      backtesting: getBacktestingPayload({ strategies, runs })
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
 app.post('/beta/advisor/message', requireBetaMember, advisorLimiter, async (req, res, next) => {
   const result = validate(betaAdvisorSchema, req.body);
   if (result.error) {
@@ -754,6 +814,139 @@ await initializeDatabase();
 app.listen(port, () => {
   console.log(`obsidianabyss-api listening on ${port}`);
 });
+
+function buildBetaDashboardPayload({
+  pricing,
+  catalog,
+  strategies,
+  intents,
+  riskChecks,
+  runs,
+  connectors,
+  balanceChecks,
+  transactions
+}) {
+  const latestBalanceCheck = balanceChecks[0] || null;
+  const latestTransaction = transactions[0] || null;
+  const liveExecutionEnabled = runs.some((run) => run.metadata?.live_execution === true);
+  const walletPermissionsEnabled = runs.some((run) => run.metadata?.wallet_permissions === true);
+  const exchangePermissionsEnabled = runs.some((run) => run.metadata?.exchange_permissions === true);
+
+  return {
+    developmentNotice:
+      'This member layer is a development preview. Paper-mode setups, signal scaffolds, and testnet plumbing are visible here, but funds, keys, signatures, deposits, withdrawals, and live orders remain disabled.',
+    advisor: {
+      configured: isAdvisorConfigured(),
+      mode: 'member'
+    },
+    overview: {
+      activeLanes: catalog.length,
+      paperScaffolds: strategies.length,
+      recentIntents: intents.length,
+      recentRiskChecks: riskChecks.length,
+      recentRuns: runs.length,
+      testnetNetworks: connectors.length
+    },
+    guardrails: [
+      { label: 'Paper mode', value: 'on', state: 'on' },
+      { label: 'Live execution', value: liveExecutionEnabled ? 'enabled' : 'off', state: liveExecutionEnabled ? 'warn' : 'off' },
+      { label: 'Wallet permissions', value: walletPermissionsEnabled ? 'enabled' : 'off', state: walletPermissionsEnabled ? 'warn' : 'off' },
+      { label: 'Exchange permissions', value: exchangePermissionsEnabled ? 'enabled' : 'off', state: exchangePermissionsEnabled ? 'warn' : 'off' },
+      { label: 'Member pricing', value: `$${pricing.startingMonthlyUsd}/mo`, state: 'neutral' }
+    ],
+    pipeline: {
+      strategies: strategies.map((strategy) => ({
+        key: strategy.strategy_key,
+        name: strategy.name,
+        mode: strategy.mode,
+        status: strategy.status,
+        assets: Array.isArray(strategy.assets) ? strategy.assets : [],
+        ruleType: strategy.rule_type,
+        maxTradeSizeUsd: strategy.max_trade_size_usd,
+        cooldownMinutes: strategy.cooldown_minutes,
+        description: strategy.description,
+        createdAt: strategy.created_at,
+        updatedAt: strategy.updated_at
+      })),
+      intents: intents.map((intent) => ({
+        key: intent.intent_key,
+        strategyKey: intent.strategy_key,
+        strategyName: intent.strategy_name,
+        symbol: intent.symbol,
+        side: intent.side,
+        notionalUsd: intent.notional_usd,
+        orderType: intent.order_type,
+        status: intent.status,
+        expiresAt: intent.expires_at,
+        createdAt: intent.created_at
+      })),
+      riskChecks: riskChecks.map((riskCheck) => ({
+        intentKey: riskCheck.intent_key,
+        symbol: riskCheck.symbol,
+        decision: riskCheck.decision,
+        reason: riskCheck.reason,
+        checks: objectEntries(riskCheck.checks),
+        createdAt: riskCheck.created_at
+      })),
+      runs: runs.map((run) => ({
+        key: run.run_key,
+        type: run.run_type,
+        status: run.status,
+        summary: run.summary,
+        flags: objectEntries(run.metadata),
+        createdAt: run.created_at
+      }))
+    },
+    testnet: {
+      connectors: connectors.map((connector) => ({
+        key: connector.network_key,
+        name: connector.network_name,
+        chainId: connector.chain_id,
+        status: connector.status,
+        walletAddress: maskValue(connector.wallet_address),
+        explorerUrl: connector.explorer_url,
+        lastCheckedAt: connector.last_checked_at,
+        lastBlockNumber: connector.last_block_number,
+        lastError: connector.last_error
+      })),
+      latestBalanceCheck: latestBalanceCheck
+        ? {
+            networkKey: latestBalanceCheck.network_key,
+            walletAddress: maskValue(latestBalanceCheck.wallet_address),
+            balanceEth: latestBalanceCheck.balance_eth,
+            blockNumber: latestBalanceCheck.block_number,
+            status: latestBalanceCheck.status,
+            error: latestBalanceCheck.error,
+            createdAt: latestBalanceCheck.created_at
+          }
+        : null,
+      latestTransaction: latestTransaction
+        ? {
+            networkKey: latestTransaction.network_key,
+            txHash: maskValue(latestTransaction.tx_hash),
+            valueEth: latestTransaction.value_eth,
+            purpose: latestTransaction.purpose,
+            status: latestTransaction.status,
+            error: latestTransaction.error,
+            createdAt: latestTransaction.created_at
+          }
+        : null
+    },
+    lastUpdatedAt: getLatestTimestamp([
+      ...strategies.flatMap((strategy) => [strategy.updated_at, strategy.created_at]),
+      ...intents.map((intent) => intent.created_at),
+      ...riskChecks.map((riskCheck) => riskCheck.created_at),
+      ...runs.map((run) => run.created_at),
+      ...connectors.flatMap((connector) => [
+        connector.updated_at,
+        connector.last_checked_at,
+        connector.created_at
+      ]),
+      latestBalanceCheck?.created_at,
+      latestTransaction?.created_at
+    ])
+  };
+}
 
 function requireAdmin(req, res, next) {
   if (!adminToken) {
@@ -836,6 +1029,51 @@ async function issueBetaInvite({ requestType, requestId, name, email, expiresHou
     inviteUrl,
     notification
   };
+}
+
+function objectEntries(value) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return [];
+  }
+
+  return Object.entries(value).map(([key, entryValue]) => ({
+    key,
+    value: entryValue
+  }));
+}
+
+function maskValue(value) {
+  if (!value) {
+    return '';
+  }
+
+  const text = String(value);
+  if (text.length <= 14) {
+    return text;
+  }
+
+  return `${text.slice(0, 6)}...${text.slice(-4)}`;
+}
+
+function getLatestTimestamp(values) {
+  let latest = null;
+
+  for (const value of values) {
+    if (!value) {
+      continue;
+    }
+
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) {
+      continue;
+    }
+
+    if (!latest || date > latest) {
+      latest = date;
+    }
+  }
+
+  return latest ? latest.toISOString() : null;
 }
 
 function mapBetaMember(member) {

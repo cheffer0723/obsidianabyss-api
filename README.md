@@ -39,6 +39,8 @@ npm run smoke:prod -- --check-advisor
 - `GET /beta/session`
 - `POST /beta/logout`
 - `GET /beta/catalog`
+- `GET /beta/dashboard`
+- `GET /beta/backtesting`
 - `POST /beta/advisor/message`
 - `GET /admin/contact-requests`
 - `GET /admin/wallet-beta-requests`
@@ -169,6 +171,8 @@ Environment variables used by this flow:
 - `BETA_SESSION_HOURS=336` optional; default 14 days
 
 The beta session is API-backed and intended for the static site at `obsidianabyss.com` calling the Railway API with credentials.
+`GET /beta/dashboard` is the member-safe aggregation endpoint for the closed-beta surface. It returns the v1 setup catalog, paper-mode scaffolds, recent risk and run state, testnet readiness, and explicit guardrails without exposing admin-only internals.
+`GET /beta/backtesting` is the member-safe backtesting lab payload. It currently exposes synthetic scenario decks, readiness checkpoints, and research queue status. It does not expose audited historical performance or live trading capability.
 
 ## Base Sepolia Testnet
 
