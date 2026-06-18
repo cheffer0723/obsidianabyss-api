@@ -43,6 +43,7 @@ import {
 } from './mail.js';
 import { getBetaCatalogPayload, isAdvisorConfigured, runAdvisor } from './advisor.js';
 import { getBacktestingPayload } from './backtesting.js';
+import { getEngineResearchPayload } from './engineResearchBlueprint.js';
 
 const app = express();
 const port = Number(process.env.PORT || 3001);
@@ -708,12 +709,13 @@ app.post('/beta/logout', (req, res) => {
 });
 
 app.get('/beta/catalog', requireBetaMember, (_req, res) => {
-  res.json({ ok: true, ...getBetaCatalogPayload() });
+  res.json({ ok: true, ...getBetaCatalogPayload(), researchOverview: getEngineResearchPayload().overview });
 });
 
 app.get('/beta/dashboard', requireBetaMember, async (req, res, next) => {
   try {
     const betaPayload = getBetaCatalogPayload();
+    const engineResearch = getEngineResearchPayload();
     const [
       strategies,
       intents,
@@ -736,9 +738,11 @@ app.get('/beta/dashboard', requireBetaMember, async (req, res, next) => {
       ok: true,
       member: mapBetaMember(req.betaMember),
       ...betaPayload,
+      engineResearch,
       dashboard: buildBetaDashboardPayload({
         pricing: betaPayload.pricing,
         catalog: betaPayload.catalog,
+        engineResearch,
         strategies,
         intents,
         riskChecks,
@@ -768,6 +772,14 @@ app.get('/beta/backtesting', requireBetaMember, async (req, res, next) => {
   } catch (error) {
     next(error);
   }
+});
+
+app.get('/beta/engines', requireBetaMember, (req, res) => {
+  res.json({
+    ok: true,
+    member: mapBetaMember(req.betaMember),
+    research: getEngineResearchPayload()
+  });
 });
 
 app.post('/beta/advisor/message', requireBetaMember, advisorLimiter, async (req, res, next) => {
@@ -818,6 +830,7 @@ app.listen(port, () => {
 function buildBetaDashboardPayload({
   pricing,
   catalog,
+  engineResearch,
   strategies,
   intents,
   riskChecks,
@@ -841,12 +854,14 @@ function buildBetaDashboardPayload({
     },
     overview: {
       activeLanes: catalog.length,
+      datasetBundles: engineResearch.overview.datasetBundles,
       paperScaffolds: strategies.length,
       recentIntents: intents.length,
       recentRiskChecks: riskChecks.length,
       recentRuns: runs.length,
       testnetNetworks: connectors.length
     },
+    engineResearchOverview: engineResearch.overview,
     guardrails: [
       { label: 'Paper mode', value: 'on', state: 'on' },
       { label: 'Live execution', value: liveExecutionEnabled ? 'enabled' : 'off', state: liveExecutionEnabled ? 'warn' : 'off' },

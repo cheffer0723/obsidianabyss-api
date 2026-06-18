@@ -1,4 +1,6 @@
 import { getCatalog } from './advisor.js';
+import { getDatasetRegistry } from './backtestDatasetRegistry.js';
+import { getEngineResearchPayload } from './engineResearchBlueprint.js';
 
 const LAB_PRESETS = {
   'sol-launchrisk': {
@@ -52,7 +54,7 @@ const LAB_PRESETS = {
       {
         name: 'Trend expansion',
         posture: 'best fit',
-        takeaway: 'This lane behaves best once majors establish direction and hold it for longer windows.',
+        takeaway: 'This lane behaves best once established liquid markets pick a direction and hold it for longer windows.',
         metrics: [
           { label: 'Trend capture', value: 'strong' },
           { label: 'Turnover', value: 'low' },
@@ -81,6 +83,46 @@ const LAB_PRESETS = {
       }
     ]
   },
+  'majors-meanrevert': {
+    curve: [31, 35, 38, 44, 41, 48, 52, 57, 61],
+    stats: [
+      { label: 'Signal cadence', value: 'moderate' },
+      { label: 'Review load', value: 'moderate' },
+      { label: 'Whipsaw pressure', value: 'medium' }
+    ],
+    scenarios: [
+      {
+        name: 'Range stability',
+        posture: 'best fit',
+        takeaway: 'This lane is strongest when established liquid markets are rotating inside repeatable bands instead of trending cleanly.',
+        metrics: [
+          { label: 'Range fit', value: 'strong' },
+          { label: 'Turnover', value: 'moderate' },
+          { label: 'Discipline fit', value: 'high' }
+        ]
+      },
+      {
+        name: 'Breakout drift',
+        posture: 'stress case',
+        takeaway: 'Once a real trend starts, the mean-revert lane can become early, stubborn, and costly without hard exits.',
+        metrics: [
+          { label: 'Trend tolerance', value: 'low' },
+          { label: 'Stop reliance', value: 'high' },
+          { label: 'Manual restraint', value: 'important' }
+        ]
+      },
+      {
+        name: 'Vol spike',
+        posture: 'guardrail test',
+        takeaway: 'Fast volatility expansion forces tighter sizing and more conservative entry spacing.',
+        metrics: [
+          { label: 'Sizing pressure', value: 'high' },
+          { label: 'Cooldown need', value: 'moderate' },
+          { label: 'False reversal risk', value: 'elevated' }
+        ]
+      }
+    ]
+  },
   'evm-trend-balanced': {
     curve: [30, 34, 39, 46, 44, 51, 58, 64, 70],
     stats: [
@@ -90,19 +132,19 @@ const LAB_PRESETS = {
     ],
     scenarios: [
       {
-        name: 'Base rotation',
+        name: 'Rotation alignment',
         posture: 'best fit',
-        takeaway: 'The EVM lane is strongest when sector rotation is directional but not chaotic.',
+        takeaway: 'This lane is strongest when broader market rotation is directional but not chaotic.',
         metrics: [
           { label: 'Regime fit', value: 'balanced' },
           { label: 'Turnover', value: 'moderate' },
-          { label: 'Base alignment', value: 'strong' }
+          { label: 'Market alignment', value: 'strong' }
         ]
       },
       {
-        name: 'ETH drift',
+        name: 'Steady tape',
         posture: 'steady state',
-        takeaway: 'Slow ETH-led markets keep this lane readable, but patience still matters.',
+        takeaway: 'Steadier market tapes keep this lane readable, but patience still matters.',
         metrics: [
           { label: 'Readability', value: 'high' },
           { label: 'Trade spacing', value: 'medium' },
@@ -169,8 +211,13 @@ const METHODOLOGY = [
 
 export function getBacktestingPayload({ strategies = [], runs = [] } = {}) {
   const catalog = getCatalog({ stage: 'v1' });
+  const datasetRegistry = getDatasetRegistry();
+  const engineResearch = getEngineResearchPayload();
+  const engineResearchById = new Map(engineResearch.engines.map((engine) => [engine.id, engine]));
   const presets = catalog.map((item) => {
-    const preset = LAB_PRESETS[item.key];
+    const preset = LAB_PRESETS[item.key] || createFallbackPreset(item);
+    const research = engineResearchById.get(item.key);
+
     return {
       key: item.key,
       name: item.name,
@@ -183,6 +230,8 @@ export function getBacktestingPayload({ strategies = [], runs = [] } = {}) {
       curve: preset.curve,
       stats: preset.stats,
       scenarios: preset.scenarios,
+      datasets: research?.datasets || [],
+      readiness: research?.readiness || null,
       caveat: 'Illustrative scenario deck only. Historical PnL, slippage, and venue assumptions are not wired yet.'
     };
   });
@@ -193,6 +242,8 @@ export function getBacktestingPayload({ strategies = [], runs = [] } = {}) {
     overview: {
       previewDecks: presets.length,
       scenarioFamilies: presets.reduce((count, preset) => count + preset.scenarios.length, 0),
+      datasetBundles: datasetRegistry.length,
+      engineDefinitions: engineResearch.engines.length,
       strategyScaffolds: strategies.length,
       recentRuns: runs.length,
       validationCheckpoints: READINESS_ITEMS.length
@@ -200,6 +251,7 @@ export function getBacktestingPayload({ strategies = [], runs = [] } = {}) {
     methodology: METHODOLOGY,
     readiness: READINESS_ITEMS,
     presets,
+    research: engineResearch,
     researchQueue: RESEARCH_QUEUE,
     guardrails: [
       { label: 'Synthetic decks', value: 'on' },
@@ -210,3 +262,21 @@ export function getBacktestingPayload({ strategies = [], runs = [] } = {}) {
     lastUpdatedAt: new Date().toISOString()
   };
 }
+
+function createFallbackPreset(item) {
+  return {
+    curve: [30, 34, 39, 43, 47, 52, 56, 60, 64],
+    stats: [
+      { label: 'Signal cadence', value: item.modes.includes('alerts') ? 'event-driven' : 'moderate' },
+      { label: 'Review load', value: 'moderate' },
+      { label: 'Whipsaw pressure', value: 'unknown' }
+    ],
+    scenarios: [
+      {
+        name: 'Baseline',
+        posture: 'preview',
+        takeaway: 'Scenario deck has not been customized for this engine yet.',
+        metrics: [
+          { label: 'Engine', value: item.name },
+          { label: 'Mode', value: item.modes.join(' / ') },
+          { label: 'State',
