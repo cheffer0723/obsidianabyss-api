@@ -9,6 +9,7 @@ const SITE_URLS = [
   'https://obsidianabyss.com/admin.html',
   'https://www.obsidianabyss.com/admin.html',
   'https://www.obsidianabyss.com/beta.html',
+  'https://www.obsidianabyss.com/backtesting.html',
   'https://www.obsidianabyss.com/risk.html',
   'https://www.obsidianabyss.com/privacy.html',
   'https://www.obsidianabyss.com/terms.html',
@@ -83,6 +84,9 @@ async function checkPages() {
       assert(body.includes('Obsidian Abyss'), 'missing Obsidian Abyss text');
       if (url.includes('admin.html')) {
         assert(body.includes('Obsidian Abyss Admin'), 'missing admin title');
+      } else if (url.includes('backtesting.html')) {
+        assert(body.includes('Backtesting Lab'), 'missing backtesting lab text');
+        assert(body.includes('Lab Access'), 'missing lab access text');
       } else if (url.endsWith('/')) {
         assert(body.includes(API_BASE), 'missing production API base');
         assert(body.includes('Abyss Guide'), 'missing advisor guide text');
