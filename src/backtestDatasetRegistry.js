@@ -87,4 +87,6 @@ export function getDatasetsForEngine(engineId) {
         cloneDataset
       );
     default:
-   
+      return [];
+  }
+}
