@@ -219,4 +219,5 @@ export function getEngineById(id) {
 }
 
 export function getBacktestableEngines() {
-  return ENGINE_CATALOG.filter((engine) => engine.member
+  return ENGINE_CATALOG.filter((engine) => engine.member).map(cloneEngine);
+}
