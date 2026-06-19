@@ -17,6 +17,45 @@ function cloneEngine(engine) {
 
 export const ENGINE_CATALOG = [
   {
+    id: 'crypto-markov-regime',
+    key: 'crypto-markov-regime',
+    name: 'Markov Regime',
+    chain: 'Crypto research lane',
+    asset: 'Top cap + volume union',
+    archetype: 'markov-regime',
+    summary:
+      'Daily crypto regime engine that labels 20-day return states, estimates next-state odds, and publishes read-only paper-position research output.',
+    memberDetail:
+      'Best for members who want one real, validated engine with published walk-forward output before anything execution-related is even considered.',
+    risk: 'Balanced',
+    modes: ['paper'],
+    stage: 'v1',
+    category: 'regime',
+    audience: 'starter',
+    description:
+      'Deterministic crypto regime engine built from 20-day rolling return labels, a smoothed 3x3 state transition matrix, and no-lookahead walk-forward validation.',
+    markets: ['TOP-CRYPTO-UNION'],
+    venues: ['coingecko-daily-research'],
+    cadence: '1d',
+    executionModel: 'rules-only',
+    signalModel: {
+      primary: '20d-return-state-transition-matrix',
+      enrichments: ['edge-bull-minus-bear', 'walk-forward-validation']
+    },
+    riskModel: {
+      maxConcurrentPositions: 1,
+      stopPolicy: 'state-flip-to-flat-or-opposing-regime',
+      sizing: 'edge-scaled-paper-position'
+    },
+    backtestRequirements: [
+      'daily-price-history',
+      'market-cap-and-volume-universe',
+      'transition-matrix-history',
+      'walk-forward-summary'
+    ],
+    memberFacingState: 'paper'
+  },
+  {
     id: 'sol-launchrisk',
     key: 'sol-launchrisk',
     name: 'Launch Screen',
@@ -29,7 +68,7 @@ export const ENGINE_CATALOG = [
       'Best for users who want a slower first-pass screening workflow before they trust any fast-moving new listing.',
     risk: 'Cautious',
     modes: ['paper', 'alerts'],
-    stage: 'v1',
+    stage: 'later',
     category: 'screening',
     audience: 'advanced',
     description:
@@ -53,7 +92,7 @@ export const ENGINE_CATALOG = [
       'post-launch-price-series',
       'labelled-outcomes'
     ],
-    memberFacingState: 'alerts'
+    memberFacingState: 'research'
   },
   {
     id: 'majors-trend',
@@ -68,7 +107,7 @@ export const ENGINE_CATALOG = [
       'Best for cautious users who want one understandable core setup before touching anything noisy or fast-moving.',
     risk: 'Cautious',
     modes: ['paper', 'alerts'],
-    stage: 'v1',
+    stage: 'later',
     category: 'trend',
     audience: 'starter',
     description:
@@ -87,7 +126,7 @@ export const ENGINE_CATALOG = [
       sizing: 'fixed-fraction-capped'
     },
     backtestRequirements: ['candles', 'spread-assumptions', 'fees', 'slippage'],
-    memberFacingState: 'paper'
+    memberFacingState: 'research'
   },
   {
     id: 'majors-meanrevert',
@@ -101,7 +140,7 @@ export const ENGINE_CATALOG = [
       'Best for users who want a rules-based core lane during sideways or unstable conditions instead of waiting only for trend confirmation.',
     risk: 'Balanced',
     modes: ['paper'],
-    stage: 'v1',
+    stage: 'later',
     category: 'mean-reversion',
     audience: 'starter',
     description:
@@ -120,7 +159,7 @@ export const ENGINE_CATALOG = [
       sizing: 'fixed-fraction-capped'
     },
     backtestRequirements: ['candles', 'spread-assumptions', 'fees', 'slippage'],
-    memberFacingState: 'paper'
+    memberFacingState: 'research'
   },
   {
     id: 'evm-trend-balanced',
@@ -135,7 +174,7 @@ export const ENGINE_CATALOG = [
       'Best for users who want a broader opportunity set than the core lane, but still want a deliberate route into permissioned workflows later.',
     risk: 'Balanced',
     modes: ['paper'],
-    stage: 'v1',
+    stage: 'later',
     category: 'trend',
     audience: 'intermediate',
     description:
@@ -154,7 +193,7 @@ export const ENGINE_CATALOG = [
       sizing: 'volatility-target-capped'
     },
     backtestRequirements: ['candles', 'benchmark-series', 'fees', 'slippage'],
-    memberFacingState: 'paper'
+    memberFacingState: 'research'
   },
   {
     id: 'sol-social-cautious',
@@ -193,7 +232,7 @@ export const ENGINE_CATALOG = [
       'post-launch-price-series',
       'labelled-outcomes'
     ],
-    memberFacingState: 'alerts'
+    memberFacingState: 'research'
   }
 ];
 

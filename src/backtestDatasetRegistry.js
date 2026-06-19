@@ -9,6 +9,18 @@ function cloneDataset(dataset) {
 
 export const DATASET_REGISTRY = [
   {
+    id: 'crypto-markov-regime-v1',
+    name: 'Markov Regime Research Export',
+    status: 'research-ready',
+    scope: ['TOP-CRYPTO-UNION'],
+    dataTypes: ['daily-price-history', 'signals', 'walk-forward-results'],
+    venue: 'coingecko-daily-research',
+    timeframes: ['1d'],
+    sourceKind: 'local',
+    notes:
+      'Reusable daily crypto research export sourced from the validated Markov Regime engine output files. Read-only walk-forward stats exist, but venue replay, fees, and slippage are not calibrated.'
+  },
+  {
     id: 'majors-core-candles-v1',
     name: 'Core Market Research Candles',
     status: 'partial',
@@ -69,6 +81,10 @@ export function getDatasetById(id) {
 
 export function getDatasetsForEngine(engineId) {
   switch (engineId) {
+    case 'crypto-markov-regime':
+      return DATASET_REGISTRY.filter((dataset) => dataset.id === 'crypto-markov-regime-v1').map(
+        cloneDataset
+      );
     case 'majors-trend':
     case 'majors-meanrevert':
       return DATASET_REGISTRY.filter((dataset) => dataset.id === 'majors-core-candles-v1').map(

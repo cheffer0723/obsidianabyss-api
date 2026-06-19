@@ -1,6 +1,7 @@
 import { getCatalog } from './advisor.js';
 import { getDatasetRegistry } from './backtestDatasetRegistry.js';
 import { getEngineResearchPayload } from './engineResearchBlueprint.js';
+import { buildMarkovBacktestingPreset, getMarkovRegimeMeta } from './markovRegimeData.js';
 
 const LAB_PRESETS = {
   'sol-launchrisk': {
@@ -167,24 +168,34 @@ const LAB_PRESETS = {
 
 const READINESS_ITEMS = [
   {
+    label: 'Validated research export',
+    status: 'active',
+    detail:
+      'Markov Regime now publishes a real walk-forward research export sourced from local engine output files.'
+  },
+  {
     label: 'Historical data normalization',
     status: 'in progress',
-    detail: 'Exchange-normalized candle and event inputs still need to be wired into one consistent research layer.'
+    detail:
+      'The current Markov output is research-ready daily data. Execution-grade venue normalization is still a later milestone.'
   },
   {
     label: 'Fees and slippage model',
     status: 'queued',
-    detail: 'Execution cost assumptions are not calibrated yet, so no performance claim should be treated as historical truth.'
+    detail:
+      'Execution cost assumptions are not calibrated yet, so read-only research output must not be treated as execution-grade historical truth.'
   },
   {
     label: 'Walk-forward validation',
-    status: 'queued',
-    detail: 'Windowing, out-of-sample checks, and versioned reruns are still staged work.'
+    status: 'active',
+    detail:
+      'Walk-forward output exists for the published Markov engine, but rerun scheduling and versioned comparisons are still staged work.'
   },
   {
     label: 'Member reporting layer',
     status: 'active',
-    detail: 'The UI layer can now surface decks, guardrails, and later real backtest outputs behind beta access.'
+    detail:
+      'The member UI can now surface one real engine export while keeping execution, custody, and live trading disabled.'
   }
 ];
 
@@ -195,7 +206,8 @@ const RESEARCH_QUEUE = [
   },
   {
     label: 'Separate calibration from marketing',
-    detail: 'Synthetic and research-only runs must stay visibly distinct from true historical or live results.'
+    detail:
+      'Research-ready outputs must stay visibly distinct from execution-grade historical claims and anything live.'
   },
   {
     label: 'Add venue assumptions',
@@ -204,9 +216,9 @@ const RESEARCH_QUEUE = [
 ];
 
 const METHODOLOGY = [
-  'This lab is a development preview. The current decks are synthetic scenario calibrations, not historical return claims.',
+  'This lab now includes one real walk-forward research export for Markov Regime. It is still not execution-grade historical performance.',
   'Every setup still starts in paper mode. No wallet permissions, exchange credentials, or live orders are enabled from this layer.',
-  'Real backtests unlock after algorithm inputs, fee assumptions, and walk-forward validation are versioned and reviewable.'
+  'Fees, slippage, venue replay, and versioned reruns still need to be explicit before any performance claim deserves more weight than research.'
 ];
 
 export function getBacktestingPayload({ strategies = [], runs = [] } = {}) {
@@ -215,7 +227,7 @@ export function getBacktestingPayload({ strategies = [], runs = [] } = {}) {
   const engineResearch = getEngineResearchPayload();
   const engineResearchById = new Map(engineResearch.engines.map((engine) => [engine.id, engine]));
   const presets = catalog.map((item) => {
-    const preset = LAB_PRESETS[item.key] || createFallbackPreset(item);
+    const preset = resolvePreset(item);
     const research = engineResearchById.get(item.key);
 
     return {
@@ -226,27 +238,53 @@ export function getBacktestingPayload({ strategies = [], runs = [] } = {}) {
       risk: item.risk,
       modes: item.modes,
       summary: item.member_detail || item.summary,
-      curveLabel: 'Relative scenario path',
+      curveLabel: preset.curveLabel || 'Relative scenario path',
       curve: preset.curve,
       stats: preset.stats,
       scenarios: preset.scenarios,
       datasets: research?.datasets || [],
       readiness: research?.readiness || null,
-      caveat: 'Illustrative scenario deck only. Historical PnL, slippage, and venue assumptions are not wired yet.'
+      timeframe: preset.timeframe || null,
+      venue: preset.venue || null,
+      dataMode: preset.dataMode || 'synthetic',
+      coverage: preset.coverage || null,
+      aggregate: preset.aggregate || null,
+      caveat:
+        preset.caveat ||
+        'Illustrative scenario deck only. Historical PnL, slippage, and venue assumptions are not wired yet.'
     };
   });
+  const publishedResearchDecks = presets.filter((preset) => preset.dataMode === 'research-live').length;
+  const syntheticDecks = presets.length - publishedResearchDecks;
+  const markovMeta = catalog.some((item) => item.key === 'crypto-markov-regime')
+    ? getMarkovRegimeMeta()
+    : null;
+  const totalAssetsCovered = presets.reduce(
+    (sum, preset) => sum + Number(preset.coverage?.usableAssets || 0),
+    0
+  );
+  const totalTradesCovered = presets.reduce(
+    (sum, preset) => sum + Number(preset.aggregate?.totalTrades || 0),
+    0
+  );
 
   return {
     notice:
-      'Backtesting Lab is a development preview for beta members. What you see here is scenario calibration and workflow scaffolding, not audited historical performance.',
+      publishedResearchDecks > 0
+        ? 'Backtesting Lab now includes one real, read-only Markov Regime research export for beta members. It remains a research surface, not an execution layer or audited performance portal.'
+        : 'Backtesting Lab is a development preview for beta members. What you see here is scenario calibration and workflow scaffolding, not audited historical performance.',
     overview: {
+      publishedResearchDecks,
+      syntheticDecks,
       previewDecks: presets.length,
       scenarioFamilies: presets.reduce((count, preset) => count + preset.scenarios.length, 0),
       datasetBundles: datasetRegistry.length,
       engineDefinitions: engineResearch.engines.length,
       strategyScaffolds: strategies.length,
       recentRuns: runs.length,
-      validationCheckpoints: READINESS_ITEMS.length
+      validationCheckpoints: READINESS_ITEMS.length,
+      assetsCovered: totalAssetsCovered,
+      tradeSamples: totalTradesCovered
     },
     methodology: METHODOLOGY,
     readiness: READINESS_ITEMS,
@@ -254,13 +292,27 @@ export function getBacktestingPayload({ strategies = [], runs = [] } = {}) {
     research: engineResearch,
     researchQueue: RESEARCH_QUEUE,
     guardrails: [
-      { label: 'Synthetic decks', value: 'on' },
-      { label: 'Historical PnL claims', value: 'off' },
+      {
+        label: 'Research-ready decks',
+        value: publishedResearchDecks ? `${publishedResearchDecks} published` : 'none',
+        state: publishedResearchDecks ? 'on' : 'off'
+      },
+      { label: 'Synthetic decks', value: syntheticDecks ? `${syntheticDecks} visible` : 'off', state: syntheticDecks ? 'warn' : 'off' },
+      { label: 'Execution-grade claims', value: 'off', state: 'off' },
       { label: 'Live execution', value: 'off' },
       { label: 'Wallet authority', value: 'off' }
     ],
-    lastUpdatedAt: new Date().toISOString()
+    lastValidatedAt: markovMeta?.lastValidatedAt || null,
+    lastUpdatedAt: markovMeta?.sourceUpdatedAt || new Date().toISOString()
   };
+}
+
+function resolvePreset(item) {
+  if (item.key === 'crypto-markov-regime') {
+    return buildMarkovBacktestingPreset();
+  }
+
+  return LAB_PRESETS[item.key] || createFallbackPreset(item);
 }
 
 function createFallbackPreset(item) {
@@ -282,6 +334,7 @@ function createFallbackPreset(item) {
           { label: 'State', value: 'research' }
         ]
       }
-    ]
+    ],
+    dataMode: 'synthetic'
   };
 }

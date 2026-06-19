@@ -44,6 +44,10 @@ import {
 import { getBetaCatalogPayload, isAdvisorConfigured, runAdvisor } from './advisor.js';
 import { getBacktestingPayload } from './backtesting.js';
 import { getEngineResearchPayload } from './engineResearchBlueprint.js';
+import {
+  getMarkovRegimeMemberPayload,
+  getMarkovRegimePreviewPayload
+} from './markovRegimeData.js';
 
 const app = express();
 const port = Number(process.env.PORT || 3001);
@@ -191,6 +195,16 @@ app.get('/health', (_req, res) => {
     },
     timestamp: new Date().toISOString()
   });
+});
+
+app.get('/engines/:engineId', (req, res) => {
+  const payload = getEnginePreviewPayload(req.params.engineId);
+  if (!payload) {
+    res.status(404).json({ ok: false, error: 'Engine not found' });
+    return;
+  }
+
+  res.json({ ok: true, mode: 'preview', engine: payload });
 });
 
 app.post('/contact', submissionLimiter, async (req, res, next) => {
@@ -782,6 +796,21 @@ app.get('/beta/engines', requireBetaMember, (req, res) => {
   });
 });
 
+app.get('/beta/engines/:engineId', requireBetaMember, (req, res) => {
+  const payload = getEngineMemberPayload(req.params.engineId);
+  if (!payload) {
+    res.status(404).json({ ok: false, error: 'Engine not found' });
+    return;
+  }
+
+  res.json({
+    ok: true,
+    mode: 'full',
+    member: mapBetaMember(req.betaMember),
+    engine: payload
+  });
+});
+
 app.post('/beta/advisor/message', requireBetaMember, advisorLimiter, async (req, res, next) => {
   const result = validate(betaAdvisorSchema, req.body);
   if (result.error) {
@@ -961,6 +990,22 @@ function buildBetaDashboardPayload({
       latestTransaction?.created_at
     ])
   };
+}
+
+function getEnginePreviewPayload(engineId) {
+  if (engineId === 'crypto-markov-regime') {
+    return getMarkovRegimePreviewPayload();
+  }
+
+  return null;
+}
+
+function getEngineMemberPayload(engineId) {
+  if (engineId === 'crypto-markov-regime') {
+    return getMarkovRegimeMemberPayload();
+  }
+
+  return null;
 }
 
 function requireAdmin(req, res, next) {
