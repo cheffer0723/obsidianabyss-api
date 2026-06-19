@@ -1,12 +1,14 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 const ENGINE_ID = 'crypto-markov-regime';
 const ENGINE_NAME = 'Markov Regime';
 const env = globalThis.process?.env || {};
+const moduleDir = path.dirname(fileURLToPath(import.meta.url));
+const bundledOutputDir = path.resolve(moduleDir, '../data/markov');
 const DEFAULT_OUTPUT_DIR =
-  env.MARKOV_ENGINE_OUTPUT_DIR ||
-  'C:/Users/DUNAMIS/llm_youtube_engine_research/engine_output';
+  env.MARKOV_ENGINE_OUTPUT_DIR || bundledOutputDir;
 const SIGNALS_FILE = 'latest_signals.csv';
 const RESULTS_FILE = 'engine_results.json';
 const SIGNALS_PATH = path.join(DEFAULT_OUTPUT_DIR, SIGNALS_FILE);
@@ -39,13 +41,13 @@ export function getMarkovRegimeMeta() {
 }
 
 function loadMarkovRegimeData() {
-  const sourceStats = getSourceStats();
-  const signature = `${sourceStats.signals.mtimeMs}:${sourceStats.signals.size}|${sourceStats.results.mtimeMs}:${sourceStats.results.size}`;
-  if (cachedPayload && cachedSignature === signature) {
-    return cachedPayload;
-  }
-
   try {
+    const sourceStats = getSourceStats();
+    const signature = `${sourceStats.signals.mtimeMs}:${sourceStats.signals.size}|${sourceStats.results.mtimeMs}:${sourceStats.results.size}`;
+    if (cachedPayload && cachedSignature === signature) {
+      return cachedPayload;
+    }
+
     const signalRows = parseCsv(fs.readFileSync(SIGNALS_PATH, 'utf8'));
     const resultRows = JSON.parse(fs.readFileSync(RESULTS_PATH, 'utf8'));
     const payload = buildPayload({ signalRows, resultRows, sourceStats });
