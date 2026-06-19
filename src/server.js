@@ -51,6 +51,7 @@ import {
 
 const app = express();
 const port = Number(process.env.PORT || 3001);
+const databaseRetryMs = Number(process.env.DATABASE_INIT_RETRY_MS || 30000);
 const defaultAllowedOrigins = [
   'https://obsidianabyss.com',
   'https://www.obsidianabyss.com',
@@ -850,11 +851,11 @@ app.use((err, _req, res, _next) => {
   res.status(500).json({ ok: false, error: 'Internal server error' });
 });
 
-await initializeDatabase();
-
 app.listen(port, () => {
   console.log(`obsidianabyss-api listening on ${port}`);
 });
+
+bootstrapDatabase();
 
 function buildBetaDashboardPayload({
   pricing,
@@ -1227,5 +1228,19 @@ async function notifySafely(sendNotification) {
   } catch (error) {
     console.error('Email notification failed:', error.message);
     return { sent: false, reason: 'mail_send_failed' };
+  }
+}
+
+async function bootstrapDatabase() {
+  if (!isDatabaseConfigured()) {
+    return;
+  }
+
+  try {
+    await initializeDatabase();
+    console.log('Database initialized.');
+  } catch (error) {
+    console.error('Database initialization failed:', error);
+    setTimeout(bootstrapDatabase, databaseRetryMs);
   }
 }
