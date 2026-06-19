@@ -19,7 +19,7 @@ export const ENGINE_CATALOG = [
   {
     id: 'crypto-markov-regime',
     key: 'crypto-markov-regime',
-    name: 'Markov Regime',
+    name: 'Cerberus',
     chain: 'Crypto research lane',
     asset: 'Top cap + volume union',
     archetype: 'markov-regime',

@@ -10,7 +10,7 @@ function cloneDataset(dataset) {
 export const DATASET_REGISTRY = [
   {
     id: 'crypto-markov-regime-v1',
-    name: 'Markov Regime Research Export',
+    name: 'Cerberus Research Export',
     status: 'research-ready',
     scope: ['TOP-CRYPTO-UNION'],
     dataTypes: ['daily-price-history', 'signals', 'walk-forward-results'],
@@ -18,7 +18,7 @@ export const DATASET_REGISTRY = [
     timeframes: ['1d'],
     sourceKind: 'local',
     notes:
-      'Reusable daily crypto research export sourced from the validated Markov Regime engine output files. Read-only walk-forward stats exist, but venue replay, fees, and slippage are not calibrated.'
+      'Reusable daily crypto research export sourced from the validated Cerberus engine output files. Read-only walk-forward stats exist, but venue replay, fees, and slippage are not calibrated.'
   },
   {
     id: 'majors-core-candles-v1',

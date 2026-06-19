@@ -4,7 +4,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const ENGINE_ID = 'crypto-markov-regime';
-const ENGINE_NAME = 'Markov Regime';
+const ENGINE_NAME = 'Cerberus';
 const env = globalThis.process?.env || {};
 const moduleDir = path.dirname(fileURLToPath(import.meta.url));
 const bundledOutputDir = path.resolve(moduleDir, '../data/markov');
@@ -57,13 +57,13 @@ function loadMarkovRegimeData() {
     return payload;
   } catch (error) {
     if (error && (error.code === 'ENOENT' || error.code === 'ENOTDIR')) {
-      const unavailable = new Error('Markov regime research files are not available.');
+      const unavailable = new Error('Cerberus research files are not available.');
       unavailable.statusCode = 503;
       throw unavailable;
     }
 
     if (error instanceof SyntaxError) {
-      const invalid = new Error('Markov regime research files could not be parsed.');
+      const invalid = new Error('Cerberus research files could not be parsed.');
       invalid.statusCode = 502;
       throw invalid;
     }
@@ -199,7 +199,7 @@ function buildPayload({ signalRows, resultRows, sourceStats }) {
   const member = {
     ...preview,
     notice:
-      'Member detail exposes per-asset walk-forward summaries from the validated Markov Regime export. Execution, wallet authority, and live trading remain disabled.',
+      'Member detail exposes per-asset walk-forward summaries from the validated Cerberus export. Execution, wallet authority, and live trading remain disabled.',
     highlights: {
       best: usableAssets.slice(0, 5).map(toHighlight),
       worst: usableAssets.slice(-5).reverse().map(toHighlight)

@@ -134,7 +134,7 @@ Two existing local patterns already point in the right direction:
    - paper execution
    - audit logging
 
-2. The Markov regime research flow:
+2. The Cerberus research flow:
    - universe selection
    - regime labeling
    - walk-forward simulation

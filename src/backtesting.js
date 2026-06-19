@@ -171,13 +171,13 @@ const READINESS_ITEMS = [
     label: 'Validated research export',
     status: 'active',
     detail:
-      'Markov Regime now publishes a real walk-forward research export sourced from local engine output files.'
+      'Cerberus now publishes a real walk-forward research export sourced from local engine output files.'
   },
   {
     label: 'Historical data normalization',
     status: 'in progress',
     detail:
-      'The current Markov output is research-ready daily data. Execution-grade venue normalization is still a later milestone.'
+      'The current Cerberus output is research-ready daily data. Execution-grade venue normalization is still a later milestone.'
   },
   {
     label: 'Fees and slippage model',
@@ -189,7 +189,7 @@ const READINESS_ITEMS = [
     label: 'Walk-forward validation',
     status: 'active',
     detail:
-      'Walk-forward output exists for the published Markov engine, but rerun scheduling and versioned comparisons are still staged work.'
+      'Walk-forward output exists for the published Cerberus engine, but rerun scheduling and versioned comparisons are still staged work.'
   },
   {
     label: 'Member reporting layer',
@@ -216,7 +216,7 @@ const RESEARCH_QUEUE = [
 ];
 
 const METHODOLOGY = [
-  'This lab now includes one real walk-forward research export for Markov Regime. It is still not execution-grade historical performance.',
+  'This lab now includes one real walk-forward research export for Cerberus. It is still not execution-grade historical performance.',
   'Every setup still starts in paper mode. No wallet permissions, exchange credentials, or live orders are enabled from this layer.',
   'Fees, slippage, venue replay, and versioned reruns still need to be explicit before any performance claim deserves more weight than research.'
 ];
@@ -271,7 +271,7 @@ export function getBacktestingPayload({ strategies = [], runs = [] } = {}) {
   return {
     notice:
       publishedResearchDecks > 0
-        ? 'Backtesting Lab now includes one real, read-only Markov Regime research export for beta members. It remains a research surface, not an execution layer or audited performance portal.'
+        ? 'Backtesting Lab now includes one real, read-only Cerberus research export for beta members. It remains a research surface, not an execution layer or audited performance portal.'
         : 'Backtesting Lab is a development preview for beta members. What you see here is scenario calibration and workflow scaffolding, not audited historical performance.',
     overview: {
       publishedResearchDecks,
