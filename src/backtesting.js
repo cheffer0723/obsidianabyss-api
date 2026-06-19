@@ -279,4 +279,9 @@ function createFallbackPreset(item) {
         metrics: [
           { label: 'Engine', value: item.name },
           { label: 'Mode', value: item.modes.join(' / ') },
-          { label: 'State',
+          { label: 'State', value: 'research' }
+        ]
+      }
+    ]
+  };
+}
