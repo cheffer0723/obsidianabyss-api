@@ -1,5 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
+// redeploy: force fresh Railway build to pick up bundled markov data (2026-06-19)
 import { fileURLToPath } from 'node:url';
 
 const ENGINE_ID = 'crypto-markov-regime';
