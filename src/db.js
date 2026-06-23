@@ -124,7 +124,9 @@ export async function initializeDatabase() {
     ADD COLUMN IF NOT EXISTS source_request_id BIGINT,
     ADD COLUMN IF NOT EXISTS granted_at TIMESTAMPTZ,
     ADD COLUMN IF NOT EXISTS last_login_at TIMESTAMPTZ,
-    ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW();
+    ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    ADD COLUMN IF NOT EXISTS stripe_customer_id TEXT,
+    ADD COLUMN IF NOT EXISTS stripe_subscription_id TEXT;
   `);
 
   await pool.query(`
@@ -788,6 +790,57 @@ export async function deleteBetaAccessSession(sessionTokenHash) {
     `,
     [sessionTokenHash]
   );
+}
+
+export async function linkBetaMemberStripe({ email, customerId, subscriptionId }) {
+  assertDatabaseConfigured();
+
+  const result = await pool.query(
+    `
+      UPDATE beta_access_members
+      SET
+        stripe_customer_id = COALESCE($2, stripe_customer_id),
+        stripe_subscription_id = COALESCE($3, stripe_subscription_id),
+        updated_at = NOW()
+      WHERE email = $1
+      RETURNING id, email, stripe_customer_id, stripe_subscription_id;
+    `,
+    [email, customerId || null, subscriptionId || null]
+  );
+
+  return result.rows[0] || null;
+}
+
+export async function revokeBetaMemberByStripeCustomer(customerId) {
+  assertDatabaseConfigured();
+  if (!customerId) return null;
+
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const memberResult = await client.query(
+      `
+        UPDATE beta_access_members
+        SET status = 'canceled', updated_at = NOW()
+        WHERE stripe_customer_id = $1
+        RETURNING id, email;
+      `,
+      [customerId]
+    );
+
+    const member = memberResult.rows[0] || null;
+    if (member) {
+      await client.query(`DELETE FROM beta_access_sessions WHERE member_id = $1;`, [member.id]);
+    }
+
+    await client.query('COMMIT');
+    return member;
+  } catch (error) {
+    await client.query('ROLLBACK');
+    throw error;
+  } finally {
+    client.release();
+  }
 }
 
 export async function listBetaMembers({ limit = 50 } = {}) {

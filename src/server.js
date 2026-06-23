@@ -27,7 +27,9 @@ import {
   listTestnetTransactions,
   listWalletBetaRequests,
   markBetaAccessInviteSent,
+  linkBetaMemberStripe,
   recordTestnetBalanceCheck,
+  revokeBetaMemberByStripeCustomer,
   redeemBetaAccessInvite,
   updateContactRequestNotes,
   updateContactRequestStatus,
@@ -42,6 +44,12 @@ import {
   sendWalletBetaNotification
 } from './mail.js';
 import { getBetaCatalogPayload, isAdvisorConfigured, runAdvisor } from './advisor.js';
+import {
+  isBillingConfigured,
+  createMembershipCheckout,
+  constructWebhookEvent,
+  interpretWebhookEvent
+} from './billing.js';
 import { getBacktestingPayload } from './backtesting.js';
 import { getEngineResearchPayload } from './engineResearchBlueprint.js';
 import {
@@ -87,6 +95,16 @@ const advisorLimiter = rateLimit({
     error: 'Too many advisor requests. Please slow down and try again shortly.'
   }
 });
+const billingLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 20,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: {
+    ok: false,
+    error: 'Too many checkout attempts. Please try again shortly.'
+  }
+});
 const betaRedeemLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   limit: 12,
@@ -101,6 +119,10 @@ const betaRedeemLimiter = rateLimit({
 app.disable('x-powered-by');
 app.set('trust proxy', 1);
 app.use(helmet());
+
+// Stripe webhook needs the raw request body for signature verification — register before express.json().
+app.post('/billing/webhook', express.raw({ type: 'application/json' }), handleStripeWebhook);
+
 app.use(express.json({ limit: '32kb' }));
 app.use(
   cors({
@@ -189,6 +211,9 @@ app.get('/health', (_req, res) => {
     },
     advisor: {
       configured: isAdvisorConfigured()
+    },
+    billing: {
+      configured: isBillingConfigured()
     },
     betaAccess: {
       enabled: isDatabaseConfigured()
@@ -831,6 +856,30 @@ app.post('/beta/advisor/message', requireBetaMember, advisorLimiter, async (req,
   }
 });
 
+const billingCheckoutSchema = z.object({
+  email: z.string().trim().email().max(254).optional().or(z.literal(''))
+});
+
+app.post('/billing/checkout', billingLimiter, async (req, res, next) => {
+  if (!isBillingConfigured()) {
+    res.status(503).json({ ok: false, error: 'Billing is not configured yet.' });
+    return;
+  }
+
+  const result = validate(billingCheckoutSchema, req.body || {});
+  if (result.error) {
+    res.status(400).json({ ok: false, errors: result.error });
+    return;
+  }
+
+  try {
+    const checkout = await createMembershipCheckout({ email: result.data.email || null });
+    res.json({ ok: true, url: checkout.url });
+  } catch (error) {
+    next(error);
+  }
+});
+
 app.use((_req, res) => {
   res.status(404).json({ ok: false, error: 'Not found' });
 });
@@ -1050,6 +1099,41 @@ async function requireBetaMember(req, res, next) {
     next();
   } catch (error) {
     next(error);
+  }
+}
+
+async function handleStripeWebhook(req, res) {
+  if (!isBillingConfigured()) {
+    res.status(503).json({ ok: false, error: 'Billing is not configured.' });
+    return;
+  }
+
+  let event;
+  try {
+    event = constructWebhookEvent(req.body, req.get('stripe-signature') || '');
+  } catch (error) {
+    console.error('Stripe webhook signature verification failed:', error.message);
+    res.status(400).json({ ok: false, error: 'Invalid signature' });
+    return;
+  }
+
+  try {
+    const action = interpretWebhookEvent(event);
+    if (action.action === 'grant' && action.email) {
+      const name = action.name || action.email.split('@')[0] || 'Member';
+      await issueBetaInvite({ requestType: 'stripe', requestId: null, name, email: action.email });
+      await linkBetaMemberStripe({
+        email: action.email,
+        customerId: action.customerId,
+        subscriptionId: action.subscriptionId
+      });
+    } else if (action.action === 'revoke') {
+      await revokeBetaMemberByStripeCustomer(action.customerId);
+    }
+    res.json({ received: true });
+  } catch (error) {
+    console.error('Stripe webhook processing error:', error.message);
+    res.status(500).json({ ok: false, error: 'Webhook processing failed' });
   }
 }
 
