@@ -154,6 +154,13 @@ export async function initializeDatabase() {
     ADD COLUMN IF NOT EXISTS revoked_at TIMESTAMPTZ;
   `);
 
+  // Stripe-originated invites have no contact/wallet request behind them,
+  // so request_id must be nullable.
+  await pool.query(`
+    ALTER TABLE beta_access_invites
+    ALTER COLUMN request_id DROP NOT NULL;
+  `);
+
   await pool.query(`
     CREATE TABLE IF NOT EXISTS beta_access_sessions (
       id BIGSERIAL PRIMARY KEY,
