@@ -56,7 +56,7 @@ import {
   getMarkovRegimeMemberPayload,
   getMarkovRegimePreviewPayload
 } from './markovRegimeData.js';
-import { getCuratedBacktests, isCuratedBacktestAvailable } from './backtestShowcase.js';
+import { getCuratedBacktests, isCuratedBacktestAvailable, getEngineBacktests } from './backtestShowcase.js';
 
 const app = express();
 const port = Number(process.env.PORT || 3001);
@@ -236,6 +236,15 @@ app.get('/engines/:engineId', (req, res) => {
 app.get('/backtests/curated', (req, res, next) => {
   try {
     const data = getCuratedBacktests();
+    res.json({ ok: true, ...data });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.get('/backtests/engines', (req, res, next) => {
+  try {
+    const data = getEngineBacktests();
     res.json({ ok: true, ...data });
   } catch (error) {
     next(error);
