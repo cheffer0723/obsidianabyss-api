@@ -42,6 +42,9 @@ npm run smoke:prod -- --check-advisor
 - `GET /beta/dashboard`
 - `GET /beta/backtesting`
 - `POST /beta/advisor/message`
+- `GET /x402/status`
+- `GET /agent/catalog`
+- `GET /agent/backtesting`
 - `GET /admin/contact-requests`
 - `GET /admin/wallet-beta-requests`
 - `POST /admin/contact-requests/:id/invite`
@@ -120,6 +123,31 @@ Set Microsoft 365 SMTP variables to email new submissions after they are saved:
 Email failures do not block database saves.
 
 This first backend stores no wallet secrets, performs no wallet signatures, and has no trading permissions.
+
+## x402 Prep
+
+The repo now has a live-ready x402 surface for agentic access. The first paid route is `GET /agent/backtesting`; it is protected by x402 middleware when enabled and returns the research payload once payment is accepted.
+
+- `GET /x402/status` returns the x402 configuration snapshot and planned agent routes.
+- `GET /agent/catalog` returns the same machine-readable catalog for future clients.
+- `GET /agent/backtesting` is the first paid route.
+
+Environment variables for the paid surface:
+
+- `X402_ENABLED=true`
+- `X402_FACILITATOR_URL=https://x402.org/facilitator` for testnet or the CDP facilitator for production
+- `X402_NETWORK=eip155:84532`
+- `X402_RECEIVING_ADDRESS=0x0000000000000000000000000000000000000000`
+- `X402_CURRENCY=USDC`
+- `X402_AMOUNT=$0.01`
+- `X402_BUILDER_CODE=`
+- `PUBLIC_API_URL=https://obsidianabyss-api-production.up.railway.app`
+
+Planned agent routes:
+
+- `GET /agent/backtesting`
+- `POST /agent/advisor/message`
+- `GET /agent/lookup`
 
 ## Abyss Guide Advisor
 

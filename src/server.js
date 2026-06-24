@@ -57,6 +57,12 @@ import {
   getMarkovRegimePreviewPayload
 } from './markovRegimeData.js';
 import { getCuratedBacktests, isCuratedBacktestAvailable, getEngineBacktests } from './backtestShowcase.js';
+import {
+  createAgenticAccessMiddleware,
+  getAgenticAccessCatalog,
+  getAgenticBacktestingPayload,
+  isAgenticAccessConfigured
+} from './agenticAccess.js';
 
 const app = express();
 const port = Number(process.env.PORT || 3001);
@@ -76,6 +82,7 @@ const betaSessionCookieName = process.env.BETA_SESSION_COOKIE_NAME || 'obsidian_
 const betaInviteHours = Number(process.env.BETA_INVITE_HOURS || 168);
 const betaSessionHours = Number(process.env.BETA_SESSION_HOURS || 336);
 const betaEligibleStatuses = new Set(['approved', 'beta-ready', 'accepted']);
+const agenticAccessMiddleware = createAgenticAccessMiddleware();
 const submissionLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   limit: 12,
@@ -138,6 +145,10 @@ app.use(
     credentials: true
   })
 );
+
+if (agenticAccessMiddleware) {
+  app.use(agenticAccessMiddleware);
+}
 
 const contactSchema = z.object({
   name: z.string().trim().min(1).max(120),
@@ -216,6 +227,9 @@ app.get('/health', (_req, res) => {
     billing: {
       configured: isBillingConfigured()
     },
+    x402: {
+      configured: isAgenticAccessConfigured()
+    },
     betaAccess: {
       enabled: isDatabaseConfigured()
     },
@@ -249,6 +263,23 @@ app.get('/backtests/engines', (req, res, next) => {
   } catch (error) {
     next(error);
   }
+});
+
+app.get('/x402/status', (_req, res) => {
+  res.json(getAgenticAccessCatalog());
+});
+
+app.get('/agent/catalog', (_req, res) => {
+  res.json(getAgenticAccessCatalog());
+});
+
+app.get('/agent/backtesting', (_req, res) => {
+  if (!isAgenticAccessConfigured()) {
+    res.status(503).json({ ok: false, error: 'Agentic access is not enabled yet.' });
+    return;
+  }
+
+  res.json(getAgenticBacktestingPayload());
 });
 
 app.post('/contact', submissionLimiter, async (req, res, next) => {
