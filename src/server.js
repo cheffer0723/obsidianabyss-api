@@ -63,6 +63,14 @@ import {
   getAgenticBacktestingPayload,
   isAgenticAccessConfigured
 } from './agenticAccess.js';
+import {
+  buildGraph,
+  checkHealth as checkMirofishHealth,
+  generateOntology,
+  getGraphData,
+  getTaskStatus,
+  isMiroFishConfigured
+} from './mirofish.js';
 
 const app = express();
 const port = Number(process.env.PORT || 3001);
@@ -121,6 +129,17 @@ const betaRedeemLimiter = rateLimit({
   message: {
     ok: false,
     error: 'Too many beta access attempts. Please try again later.'
+  }
+});
+// MiroFish runs are heavy (real LLM + graph-build cost per call) — keep this tight.
+const mirofishLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000,
+  limit: 10,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: {
+    ok: false,
+    error: 'Too many simulation requests this hour. Please try again later.'
   }
 });
 
@@ -734,6 +753,11 @@ const betaAdvisorSchema = z.object({
   mode: z.literal('full').optional()
 });
 
+const mirofishSessionSchema = z.object({
+  question: z.string().trim().min(1).max(4000),
+  context: z.string().trim().max(16000).optional()
+});
+
 app.post('/beta/invites/redeem', betaRedeemLimiter, async (req, res, next) => {
   const result = validate(betaRedeemSchema, req.body);
   if (result.error) {
@@ -884,6 +908,91 @@ app.get('/beta/engines/:engineId', requireBetaMember, (req, res) => {
     member: mapBetaMember(req.betaMember),
     engine: payload
   });
+});
+
+app.get('/beta/mirofish/status', requireBetaMember, async (_req, res) => {
+  if (!isMiroFishConfigured()) {
+    res.json({ ok: true, configured: false });
+    return;
+  }
+
+  try {
+    const health = await checkMirofishHealth();
+    res.json({ ok: true, configured: true, health });
+  } catch (error) {
+    res.json({ ok: true, configured: true, healthy: false, error: error.message });
+  }
+});
+
+// Starts a new MiroFish ontology-generation pass for a member's strategy question.
+// This is step 1 of MiroFish's pipeline (ontology -> graph build -> simulation -> report).
+// Simulation/report stages aren't wired in yet — see src/mirofish.js for status.
+app.post('/beta/mirofish/sessions', requireBetaMember, mirofishLimiter, async (req, res, next) => {
+  if (!isMiroFishConfigured()) {
+    res.status(503).json({ ok: false, error: 'MiroFish is not configured yet' });
+    return;
+  }
+
+  const result = validate(mirofishSessionSchema, req.body);
+  if (result.error) {
+    res.status(400).json({ ok: false, errors: result.error });
+    return;
+  }
+
+  try {
+    const ontology = await generateOntology({
+      projectName: `member-${req.betaMember.id}-${Date.now()}`,
+      simulationRequirement: result.data.question,
+      files: result.data.context
+        ? [{ filename: 'context.txt', content: result.data.context }]
+        : []
+    });
+    res.json({ ok: true, ontology });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.post('/beta/mirofish/sessions/:projectId/build', requireBetaMember, mirofishLimiter, async (req, res, next) => {
+  if (!isMiroFishConfigured()) {
+    res.status(503).json({ ok: false, error: 'MiroFish is not configured yet' });
+    return;
+  }
+
+  try {
+    const build = await buildGraph({ projectId: req.params.projectId });
+    res.json({ ok: true, build });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.get('/beta/mirofish/tasks/:taskId', requireBetaMember, async (req, res, next) => {
+  if (!isMiroFishConfigured()) {
+    res.status(503).json({ ok: false, error: 'MiroFish is not configured yet' });
+    return;
+  }
+
+  try {
+    const status = await getTaskStatus(req.params.taskId);
+    res.json({ ok: true, status });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.get('/beta/mirofish/graphs/:graphId', requireBetaMember, async (req, res, next) => {
+  if (!isMiroFishConfigured()) {
+    res.status(503).json({ ok: false, error: 'MiroFish is not configured yet' });
+    return;
+  }
+
+  try {
+    const data = await getGraphData(req.params.graphId);
+    res.json({ ok: true, data });
+  } catch (error) {
+    next(error);
+  }
 });
 
 app.post('/beta/advisor/message', requireBetaMember, advisorLimiter, async (req, res, next) => {
@@ -1123,7 +1232,35 @@ function requireAdmin(req, res, next) {
   next();
 }
 
+// Owner override: a request authenticated with ADMIN_TOKEN (the same secret that
+// gates /admin/* routes) skips the invite/redeem flow entirely and is treated as
+// a full beta member. This only works for whoever holds ADMIN_TOKEN — it doesn't
+// loosen access for anyone else, it just gives the site owner a direct way in
+// without needing a live beta session.
+function getOwnerOverrideMember(req) {
+  if (!adminToken) return null;
+  const header = req.get('authorization') || '';
+  const token = header.startsWith('Bearer ') ? header.slice(7) : '';
+  if (!token || token !== adminToken) return null;
+  return {
+    id: 0,
+    email: 'owner@obsidianabyss.com',
+    name: 'Owner',
+    status: 'approved',
+    access_tier: 'owner',
+    granted_at: new Date().toISOString(),
+    last_login_at: new Date().toISOString()
+  };
+}
+
 async function requireBetaMember(req, res, next) {
+  const owner = getOwnerOverrideMember(req);
+  if (owner) {
+    req.betaMember = owner;
+    next();
+    return;
+  }
+
   const tokens = readBetaSessionTokens(req);
   if (!tokens.length) {
     res.status(401).json({ ok: false, error: 'Beta access required' });
