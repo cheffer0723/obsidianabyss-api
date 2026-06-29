@@ -77,6 +77,8 @@ const port = Number(process.env.PORT || 3001);
 const defaultAllowedOrigins = [
   'https://obsidianabyss.com',
   'https://www.obsidianabyss.com',
+  'https://cheffer0723.github.io',
+  'https://dashboard-production-1ee0.up.railway.app',
   'http://127.0.0.1:8000',
   'http://localhost:8000'
 ];
@@ -142,6 +144,7 @@ const mirofishLimiter = rateLimit({
     error: 'Too many simulation requests this hour. Please try again later.'
   }
 });
+const emotionalAnalysisStore = new Map();
 
 app.disable('x-powered-by');
 app.set('trust proxy', 1);
@@ -151,6 +154,7 @@ app.use(helmet());
 app.post('/billing/webhook', express.raw({ type: 'application/json' }), handleStripeWebhook);
 
 app.use(express.json({ limit: '32kb' }));
+app.use(express.text({ type: ['text/csv', 'text/plain'], limit: '2mb' }));
 app.use(
   cors({
     origin(origin, callback) {
@@ -227,6 +231,240 @@ function validate(schema, payload) {
   };
 }
 
+function parseCsvLine(line) {
+  const cells = [];
+  let current = '';
+  let quoted = false;
+
+  for (let index = 0; index < line.length; index += 1) {
+    const char = line[index];
+    const next = line[index + 1];
+
+    if (char === '"' && quoted && next === '"') {
+      current += '"';
+      index += 1;
+      continue;
+    }
+
+    if (char === '"') {
+      quoted = !quoted;
+      continue;
+    }
+
+    if (char === ',' && !quoted) {
+      cells.push(current.trim());
+      current = '';
+      continue;
+    }
+
+    current += char;
+  }
+
+  cells.push(current.trim());
+  return cells;
+}
+
+function parseTradeCsv(csvText) {
+  const lines = String(csvText || '')
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean);
+
+  if (lines.length < 2) {
+    return [];
+  }
+
+  const headers = parseCsvLine(lines[0]).map((header) => header.trim().toLowerCase());
+  return lines.slice(1).map((line, index) => {
+    const cells = parseCsvLine(line);
+    const row = Object.fromEntries(headers.map((header, cellIndex) => [header, cells[cellIndex] ?? '']));
+    const side = String(row.side || row.action || row.type || '').toLowerCase();
+    const price = Number(row.price || row.fill_price || row.avg_price || row.execution_price || 0);
+    const quantity = Number(row.quantity || row.qty || row.shares || row.amount || 0);
+    const value = Math.abs(price * quantity);
+
+    return {
+      id: row.id || `trade-${index + 1}`,
+      timestamp: row.timestamp || row.date || row.datetime || row.time || null,
+      symbol: String(row.symbol || row.ticker || row.asset || 'UNKNOWN').toUpperCase(),
+      side: side.includes('sell') ? 'sell' : side.includes('buy') ? 'buy' : side || 'unknown',
+      price,
+      quantity,
+      value
+    };
+  });
+}
+
+function getPreviousTrade(trades, trade, index) {
+  for (let cursor = index - 1; cursor >= 0; cursor -= 1) {
+    if (trades[cursor].symbol === trade.symbol && trades[cursor].price > 0) {
+      return trades[cursor];
+    }
+  }
+
+  return null;
+}
+
+function classifyTrade(trades, trade, index) {
+  const previous = getPreviousTrade(trades, trade, index);
+  const priceChangePct = previous ? ((trade.price - previous.price) / previous.price) * 100 : 0;
+  const base = {
+    id: trade.id,
+    timestamp: trade.timestamp,
+    symbol: trade.symbol,
+    side: trade.side,
+    price: trade.price,
+    quantity: trade.quantity,
+    notional: Number(trade.value.toFixed(2)),
+    priceChangePct: Number(priceChangePct.toFixed(2))
+  };
+
+  if (trade.side === 'buy' && priceChangePct >= 2) {
+    return {
+      bucket: 'fomoChaseTrades',
+      cost: trade.value * Math.min(0.18, priceChangePct / 100),
+      trade: { ...base, reason: 'Bought after a sharp same-asset price jump.' }
+    };
+  }
+
+  if (trade.side === 'sell' && priceChangePct <= -2) {
+    return {
+      bucket: 'panicExitTrades',
+      cost: trade.value * Math.min(0.22, Math.abs(priceChangePct) / 100),
+      trade: { ...base, reason: 'Sold after a sharp same-asset price drop.' }
+    };
+  }
+
+  const averageValue =
+    trades.reduce((sum, item) => sum + (Number.isFinite(item.value) ? item.value : 0), 0) / Math.max(trades.length, 1);
+  if (trade.side === 'buy' && trade.value > averageValue * 2.5) {
+    return {
+      bucket: 'greedHoldTrades',
+      cost: trade.value * 0.03,
+      trade: { ...base, reason: 'Position size was materially larger than the trade set average.' }
+    };
+  }
+
+  return {
+    bucket: 'disciplinedTrades',
+    cost: 0,
+    trade: { ...base, reason: 'No impulse trigger detected by the current heuristic.' }
+  };
+}
+
+function buildMonthlyBreakdown(classifiedTrades) {
+  const monthly = new Map();
+
+  for (const item of classifiedTrades) {
+    const month = item.trade.timestamp ? String(item.trade.timestamp).slice(0, 7) : 'unknown';
+    const current = monthly.get(month) || {
+      month,
+      totalTrades: 0,
+      emotionalTrades: 0,
+      disciplinedTrades: 0,
+      emotionalCost: 0
+    };
+
+    current.totalTrades += 1;
+    current.emotionalCost += item.cost;
+    if (item.bucket === 'disciplinedTrades') {
+      current.disciplinedTrades += 1;
+    } else {
+      current.emotionalTrades += 1;
+    }
+    monthly.set(month, current);
+  }
+
+  return [...monthly.values()]
+    .map((row) => ({ ...row, emotionalCost: Number(row.emotionalCost.toFixed(2)) }))
+    .sort((a, b) => a.month.localeCompare(b.month));
+}
+
+function buildRegimeForecast() {
+  const data = getEngineBacktests();
+  const engines = (data.engines || []).map((engine) => {
+    const spy = (engine.assets || []).find((asset) => asset.ticker === 'SPY') || engine.assets?.[0];
+    const strategy = spy?.metrics?.strategy || {};
+    const benchmark = spy?.metrics?.benchmark || {};
+    const drawdownReduction = Math.max(0, Math.abs(benchmark.maxDrawdownPct || 0) - Math.abs(strategy.maxDrawdownPct || 0));
+
+    return {
+      key: engine.key,
+      name: engine.name,
+      type: engine.type,
+      status: engine.status,
+      asset: spy?.ticker || null,
+      cagrPct: strategy.cagrPct ?? null,
+      maxDrawdownPct: strategy.maxDrawdownPct ?? null,
+      pctInMarket: strategy.pctInMarket ?? null,
+      drawdownReductionPct: Number(drawdownReduction.toFixed(2)),
+      verdict: engine.verdict
+    };
+  });
+
+  const bullWeight = engines.reduce((sum, engine) => sum + Math.max(0, Number(engine.cagrPct || 0)) * 0.8, 0);
+  const bearWeight = engines.reduce((sum, engine) => sum + Math.max(0, Number(engine.drawdownReductionPct || 0)) * 0.45, 0);
+  const sidewaysWeight = engines.reduce((sum, engine) => {
+    const cashWeight = Math.max(0, 100 - Number(engine.pctInMarket || 50));
+    return sum + cashWeight * 0.18;
+  }, 0);
+  const total = Math.max(bullWeight + bearWeight + sidewaysWeight, 1);
+  const probabilities = {
+    bull: Number((bullWeight / total).toFixed(3)),
+    bear: Number((bearWeight / total).toFixed(3)),
+    sideways: Number((sidewaysWeight / total).toFixed(3))
+  };
+  const type = Object.entries(probabilities).sort((a, b) => b[1] - a[1])[0][0];
+
+  return {
+    type,
+    confidence: probabilities[type],
+    probabilities,
+    horizonDays: 7,
+    source: data.dataSource,
+    generatedAt: new Date().toISOString(),
+    engines
+  };
+}
+
+function buildEmotionalAnalysis(csvText) {
+  const trades = parseTradeCsv(csvText).filter((trade) => Number.isFinite(trade.price) && Number.isFinite(trade.quantity));
+  const breakdown = {
+    fomoChaseTrades: [],
+    panicExitTrades: [],
+    greedHoldTrades: [],
+    disciplinedTrades: []
+  };
+  const classifiedTrades = trades.map((trade, index) => classifyTrade(trades, trade, index));
+  let totalEmotionalCost = 0;
+
+  for (const item of classifiedTrades) {
+    breakdown[item.bucket].push(item.trade);
+    totalEmotionalCost += item.cost;
+  }
+
+  const emotionalTrades =
+    breakdown.fomoChaseTrades.length + breakdown.panicExitTrades.length + breakdown.greedHoldTrades.length;
+  const disciplinedTrades = breakdown.disciplinedTrades.length;
+  const disciplineScore = trades.length ? Math.round((disciplinedTrades / trades.length) * 100) : 0;
+
+  return {
+    summary: {
+      totalTrades: trades.length,
+      emotionalTrades,
+      disciplinedTrades,
+      totalEmotionalCost: Number(totalEmotionalCost.toFixed(2)),
+      currencyGain: Number(Math.max(0, trades.reduce((sum, trade) => sum + (trade.side === 'sell' ? trade.value : 0), 0) * 0.01).toFixed(2)),
+      potentialGain: Number((totalEmotionalCost * 1.35).toFixed(2)),
+      missedOpportunity: Number((totalEmotionalCost * 0.35).toFixed(2))
+    },
+    breakdown,
+    monthlyBreakdown: buildMonthlyBreakdown(classifiedTrades),
+    regimeForecast: buildRegimeForecast(),
+    disciplineScore
+  };
+}
+
 app.get('/health', (_req, res) => {
   res.json({
     ok: true,
@@ -253,6 +491,64 @@ app.get('/health', (_req, res) => {
       enabled: isDatabaseConfigured()
     },
     timestamp: new Date().toISOString()
+  });
+});
+
+app.get('/regime-forecast', (_req, res, next) => {
+  try {
+    res.json({ ok: true, forecast: buildRegimeForecast() });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.post('/emotional-decisions/upload', (req, res, next) => {
+  try {
+    const csvText = typeof req.body === 'string' ? req.body : req.body?.csv || req.body?.content || '';
+    const analysis = buildEmotionalAnalysis(csvText);
+    const userId = String(req.get('x-user-id') || 'demo-user');
+    emotionalAnalysisStore.set(userId, {
+      analysis,
+      uploadedAt: new Date().toISOString()
+    });
+
+    res.json({ ok: true, analysis });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.get('/emotional-decisions/summary', (req, res) => {
+  const userId = String(req.get('x-user-id') || 'demo-user');
+  const stored = emotionalAnalysisStore.get(userId);
+
+  if (stored) {
+    res.json({ ok: true, analysis: stored.analysis, uploadedAt: stored.uploadedAt });
+    return;
+  }
+
+  res.json({
+    ok: true,
+    analysis: {
+      summary: {
+        totalTrades: 0,
+        emotionalTrades: 0,
+        disciplinedTrades: 0,
+        totalEmotionalCost: 0,
+        currencyGain: 0,
+        potentialGain: 0,
+        missedOpportunity: 0
+      },
+      breakdown: {
+        fomoChaseTrades: [],
+        panicExitTrades: [],
+        greedHoldTrades: [],
+        disciplinedTrades: []
+      },
+      monthlyBreakdown: [],
+      regimeForecast: buildRegimeForecast(),
+      disciplineScore: 0
+    }
   });
 });
 
