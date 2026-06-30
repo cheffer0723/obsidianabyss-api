@@ -220,3 +220,28 @@ npm run smoke:prod -- --check-testnet-balance
 ```
 
 This does not submit transactions, request signatures, or use private keys.
+
+## Environment Contract
+
+Required for the planned backend:
+
+- `PORT`
+- `ALLOWED_ORIGINS`
+- `ADMIN_TOKEN`
+- `DATABASE_URL`
+
+Feature gates and optional overrides:
+
+- Mail: `SMTP_HOST`, `SMTP_PORT`, `SMTP_SECURE`, `SMTP_USER`, `SMTP_PASS`, `MAIL_FROM`, `MAIL_TO`
+- Advisor: `ANTHROPIC_API_KEY`, `ADVISOR_MODEL`
+- Billing: `STRIPE_SECRET_KEY`, `STRIPE_PRICE_ID`, `STRIPE_WEBHOOK_SECRET`, `BILLING_SUCCESS_URL`, `BILLING_CANCEL_URL`
+- Closed beta: `BETA_APP_URL`, `BETA_SESSION_COOKIE_NAME`, `BETA_INVITE_HOURS`, `BETA_SESSION_HOURS`
+- x402: `X402_ENABLED`, `X402_FACILITATOR_URL`, `X402_NETWORK`, `X402_RECEIVING_ADDRESS`, `X402_CURRENCY`, `X402_AMOUNT`, `X402_BUILDER_CODE`, `PUBLIC_API_URL`
+- Base Sepolia: `BASE_SEPOLIA_RPC_URL`, `BASE_SEPOLIA_CHAIN_ID`, `BASE_SEPOLIA_WALLET_ADDRESS`, `BASE_SEPOLIA_EXPLORER_URL`
+- MiroFish: `MIROFISH_BASE_URL`
+- Cerberus data override: `MARKOV_ENGINE_OUTPUT_DIR`
+
+Smoke-test helpers:
+
+- `API_BASE`
+- `SMOKE_ORIGIN`

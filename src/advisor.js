@@ -1,4 +1,5 @@
 import { getCatalog as getEngineCatalog } from './engineCatalog.js';
+import { env } from './env.js';
 
 const ANTHROPIC_URL = 'https://api.anthropic.com/v1/messages';
 
@@ -61,7 +62,7 @@ Keep replies to a few short sentences. End with a question or a clear next step.
 }
 
 export function isAdvisorConfigured() {
-  return Boolean(process.env.ANTHROPIC_API_KEY);
+  return Boolean(env.advisor.apiKey);
 }
 
 export function getCatalog({ stage = 'all' } = {}) {
@@ -80,14 +81,14 @@ export function getBetaCatalogPayload() {
 }
 
 export async function runAdvisor(messages, { mode = 'preview' } = {}) {
-  const key = process.env.ANTHROPIC_API_KEY;
+  const key = env.advisor.apiKey;
   if (!key) {
     const error = new Error('Advisor is not configured');
     error.statusCode = 503;
     throw error;
   }
 
-  const model = process.env.ADVISOR_MODEL || 'claude-haiku-4-5';
+  const model = env.advisor.model;
   const body = JSON.stringify({
     model,
     max_tokens: mode === 'full' ? 1400 : 1024,

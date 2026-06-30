@@ -1,4 +1,5 @@
 import Stripe from 'stripe';
+import { env } from './env.js';
 
 // Stripe membership billing. Entirely inert until STRIPE_SECRET_KEY + STRIPE_PRICE_ID
 // are set in the environment, so this can ship before billing is configured.
@@ -6,36 +7,34 @@ import Stripe from 'stripe';
 let stripeClient = null;
 
 function getStripe() {
-  const key = process.env.STRIPE_SECRET_KEY;
+  const key = env.billing.secretKey;
   if (!key) return null;
   if (!stripeClient) stripeClient = new Stripe(key);
   return stripeClient;
 }
 
 export function isBillingConfigured() {
-  return Boolean(process.env.STRIPE_SECRET_KEY && process.env.STRIPE_PRICE_ID);
+  return Boolean(env.billing.secretKey && env.billing.priceId);
 }
 
 export function isWebhookConfigured() {
-  return Boolean(process.env.STRIPE_SECRET_KEY && process.env.STRIPE_WEBHOOK_SECRET);
+  return Boolean(env.billing.secretKey && env.billing.webhookSecret);
 }
 
 export async function createMembershipCheckout({ email }) {
   const stripe = getStripe();
-  if (!stripe || !process.env.STRIPE_PRICE_ID) {
+  if (!stripe || !env.billing.priceId) {
     const error = new Error('Billing is not configured.');
     error.statusCode = 503;
     throw error;
   }
 
-  const successUrl =
-    process.env.BILLING_SUCCESS_URL || 'https://www.obsidianabyss.com/access.html?checkout=success';
-  const cancelUrl =
-    process.env.BILLING_CANCEL_URL || 'https://www.obsidianabyss.com/access.html?checkout=cancelled';
+  const successUrl = env.billing.successUrl;
+  const cancelUrl = env.billing.cancelUrl;
 
   const session = await stripe.checkout.sessions.create({
     mode: 'subscription',
-    line_items: [{ price: process.env.STRIPE_PRICE_ID, quantity: 1 }],
+    line_items: [{ price: env.billing.priceId, quantity: 1 }],
     ...(email ? { customer_email: email } : {}),
     allow_promotion_codes: true,
     billing_address_collection: 'auto',
@@ -50,7 +49,7 @@ export async function createMembershipCheckout({ email }) {
 
 export function constructWebhookEvent(rawBody, signature) {
   const stripe = getStripe();
-  const secret = process.env.STRIPE_WEBHOOK_SECRET;
+  const secret = env.billing.webhookSecret;
   if (!stripe || !secret) {
     const error = new Error('Billing webhook is not configured.');
     error.statusCode = 503;

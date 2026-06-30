@@ -1,3 +1,5 @@
+import { env } from './env.js';
+
 export const BASE_SEPOLIA_CHAIN_ID = 84532;
 export const DEFAULT_BASE_SEPOLIA_RPC_URL = 'https://sepolia.base.org';
 export const DEFAULT_BASE_SEPOLIA_WALLET_ADDRESS = '0xD0c7ac431D98e47230EF86E3391128D3aD0C6b13';
@@ -6,11 +8,10 @@ export function getBaseSepoliaConfig() {
   return {
     networkKey: 'base-sepolia',
     networkName: 'Base Sepolia',
-    chainId: Number(process.env.BASE_SEPOLIA_CHAIN_ID || BASE_SEPOLIA_CHAIN_ID),
-    rpcUrl: process.env.BASE_SEPOLIA_RPC_URL || DEFAULT_BASE_SEPOLIA_RPC_URL,
-    explorerUrl: process.env.BASE_SEPOLIA_EXPLORER_URL || 'https://sepolia-explorer.base.org',
-    walletAddress:
-      process.env.BASE_SEPOLIA_WALLET_ADDRESS || DEFAULT_BASE_SEPOLIA_WALLET_ADDRESS
+    chainId: env.baseSepolia.chainId,
+    rpcUrl: env.baseSepolia.rpcUrl || DEFAULT_BASE_SEPOLIA_RPC_URL,
+    explorerUrl: env.baseSepolia.explorerUrl || 'https://sepolia-explorer.base.org',
+    walletAddress: env.baseSepolia.walletAddress || DEFAULT_BASE_SEPOLIA_WALLET_ADDRESS
   };
 }
 

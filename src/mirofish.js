@@ -1,3 +1,5 @@
+import { env } from './env.js';
+
 /**
  * MiroFish integration client.
  *
@@ -29,7 +31,7 @@
  */
 
 function baseUrl() {
-  const url = process.env.MIROFISH_BASE_URL;
+  const url = env.mirofishBaseUrl;
   if (!url) {
     const error = new Error('MiroFish is not configured');
     error.statusCode = 503;
@@ -39,7 +41,7 @@ function baseUrl() {
 }
 
 export function isMiroFishConfigured() {
-  return Boolean(process.env.MIROFISH_BASE_URL);
+  return Boolean(env.mirofishBaseUrl);
 }
 
 const GRAPH_PREFIX = '/api/graph';

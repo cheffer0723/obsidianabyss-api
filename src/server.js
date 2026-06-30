@@ -5,6 +5,7 @@ import cors from 'cors';
 import helmet from 'helmet';
 import rateLimit from 'express-rate-limit';
 import { z } from 'zod';
+import { env } from './env.js';
 import {
   createBetaAccessInvite,
   createContactRequest,
@@ -73,7 +74,6 @@ import {
 } from './mirofish.js';
 
 const app = express();
-const port = Number(process.env.PORT || 3001);
 const defaultAllowedOrigins = [
   'https://obsidianabyss.com',
   'https://www.obsidianabyss.com',
@@ -82,15 +82,12 @@ const defaultAllowedOrigins = [
   'http://127.0.0.1:8000',
   'http://localhost:8000'
 ];
-const allowedOrigins = (process.env.ALLOWED_ORIGINS || defaultAllowedOrigins.join(','))
-  .split(',')
-  .map((origin) => origin.trim())
-  .filter(Boolean);
-const adminToken = process.env.ADMIN_TOKEN;
-const betaAppUrl = process.env.BETA_APP_URL || 'https://www.obsidianabyss.com/beta.html';
-const betaSessionCookieName = process.env.BETA_SESSION_COOKIE_NAME || 'obsidian_beta_session';
-const betaInviteHours = Number(process.env.BETA_INVITE_HOURS || 168);
-const betaSessionHours = Number(process.env.BETA_SESSION_HOURS || 336);
+const allowedOrigins = env.allowedOrigins.length > 0 ? env.allowedOrigins : defaultAllowedOrigins;
+const adminToken = env.adminToken;
+const betaAppUrl = env.beta.appUrl;
+const betaSessionCookieName = env.beta.sessionCookieName;
+const betaInviteHours = env.beta.inviteHours;
+const betaSessionHours = env.beta.sessionHours;
 const betaEligibleStatuses = new Set(['approved', 'beta-ready', 'accepted']);
 const agenticAccessMiddleware = createAgenticAccessMiddleware();
 const submissionLimiter = rateLimit({
@@ -1356,8 +1353,8 @@ app.use((err, _req, res, _next) => {
 
 await initializeDatabase();
 
-app.listen(port, () => {
-  console.log(`obsidianabyss-api listening on ${port}`);
+app.listen(env.port, () => {
+  console.log(`obsidianabyss-api listening on ${env.port}`);
 });
 
 function buildBetaDashboardPayload({

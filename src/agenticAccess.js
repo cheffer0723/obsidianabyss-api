@@ -3,6 +3,7 @@ import { paymentMiddleware, x402ResourceServer } from '@x402/express';
 import { declareBuilderCodeExtension } from '@x402/extensions';
 import { registerExactEvmScheme } from '@x402/evm/exact/server';
 import { getBacktestingPayload } from './backtesting.js';
+import { env } from './env.js';
 
 const BUILDER_CODE_PATTERN = /^[a-z0-9_]{1,32}$/;
 const DEFAULT_RECEIVING_ADDRESS = '0xD0c7ac431D98e47230EF86E3391128D3aD0C6b13';
@@ -37,30 +38,27 @@ function normalizeBaseUrl(url) {
 
 function getPayToAddress() {
   return (
-    process.env.X402_RECEIVING_ADDRESS ||
-    process.env.BASE_SEPOLIA_WALLET_ADDRESS ||
-    DEFAULT_RECEIVING_ADDRESS ||
-    ''
+    env.x402.receivingAddress || DEFAULT_RECEIVING_ADDRESS || ''
   ).trim();
 }
 
 function getAmount() {
-  return (process.env.X402_AMOUNT || '$0.01').trim();
+  return env.x402.amount.trim();
 }
 
 function getNetwork() {
-  return (process.env.X402_NETWORK || 'eip155:84532').trim();
+  return env.x402.network.trim();
 }
 
 function getFacilitatorUrl() {
   return (
-    process.env.X402_FACILITATOR_URL || 'https://x402.org/facilitator'
+    env.x402.facilitatorUrl
   ).trim();
 }
 
 export function isAgenticAccessConfigured() {
   return Boolean(
-    process.env.X402_ENABLED === 'true' &&
+    env.x402.enabled &&
       getFacilitatorUrl() &&
       getPayToAddress() &&
       getNetwork() &&
@@ -76,16 +74,16 @@ export function getAgenticAccessStatus() {
     facilitatorUrl: getFacilitatorUrl(),
     network: getNetwork(),
     receivingAddress: getPayToAddress(),
-    currency: process.env.X402_CURRENCY || 'USDC',
+    currency: env.x402.currency,
     amount: getAmount(),
-    builderCode: process.env.X402_BUILDER_CODE || null
+    builderCode: env.x402.builderCode
   };
 }
 
 export function getAgenticPaidRouteConfig() {
-  const builderCode = (process.env.X402_BUILDER_CODE || '').trim();
+  const builderCode = (env.x402.builderCode || '').trim();
   const resourceBaseUrl = normalizeBaseUrl(
-    process.env.PUBLIC_API_URL || 'https://obsidianabyss-api-production.up.railway.app'
+    env.x402.publicApiUrl
   );
   const payTo = getPayToAddress();
   const network = getNetwork();

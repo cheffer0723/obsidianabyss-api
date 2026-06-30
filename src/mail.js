@@ -1,12 +1,13 @@
 import nodemailer from 'nodemailer';
+import { env } from './env.js';
 
-const smtpHost = process.env.SMTP_HOST;
-const smtpPort = Number(process.env.SMTP_PORT || 587);
-const smtpSecure = process.env.SMTP_SECURE === 'true';
-const smtpUser = process.env.SMTP_USER;
-const smtpPass = process.env.SMTP_PASS;
-const mailFrom = process.env.MAIL_FROM || smtpUser;
-const mailTo = process.env.MAIL_TO || mailFrom;
+const smtpHost = env.smtp.host;
+const smtpPort = env.smtp.port;
+const smtpSecure = env.smtp.secure;
+const smtpUser = env.smtp.user;
+const smtpPass = env.smtp.pass;
+const mailFrom = env.smtp.from;
+const mailTo = env.smtp.to;
 
 const transporter =
   smtpHost && smtpUser && smtpPass && mailFrom && mailTo

@@ -2,14 +2,13 @@ import fs from 'node:fs';
 import path from 'node:path';
 // redeploy: force fresh Railway build to pick up bundled markov data (2026-06-19)
 import { fileURLToPath } from 'node:url';
+import { env } from './env.js';
 
 const ENGINE_ID = 'crypto-markov-regime';
 const ENGINE_NAME = 'Cerberus';
-const env = globalThis.process?.env || {};
 const moduleDir = path.dirname(fileURLToPath(import.meta.url));
 const bundledOutputDir = path.resolve(moduleDir, '../data/markov');
-const DEFAULT_OUTPUT_DIR =
-  env.MARKOV_ENGINE_OUTPUT_DIR || bundledOutputDir;
+const DEFAULT_OUTPUT_DIR = env.markovEngineOutputDir || bundledOutputDir;
 const SIGNALS_FILE = 'latest_signals.csv';
 const RESULTS_FILE = 'engine_results.json';
 const SIGNALS_PATH = path.join(DEFAULT_OUTPUT_DIR, SIGNALS_FILE);

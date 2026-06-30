@@ -1,9 +1,10 @@
 import pg from 'pg';
+import { env } from './env.js';
 import { getBaseSepoliaConfig } from './baseSepolia.js';
 
 const { Pool } = pg;
 
-const databaseUrl = process.env.DATABASE_URL;
+const databaseUrl = env.databaseUrl;
 const pool = databaseUrl
   ? new Pool({
       connectionString: databaseUrl
@@ -284,6 +285,31 @@ export async function initializeDatabase() {
       error TEXT,
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
+  `);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS emotional_decisions (
+      id BIGSERIAL PRIMARY KEY,
+      member_id BIGINT NOT NULL REFERENCES beta_access_members(id) ON DELETE CASCADE,
+      symbol TEXT NOT NULL,
+      entry_date DATE NOT NULL,
+      exit_date DATE NOT NULL,
+      entry_price NUMERIC(18, 8) NOT NULL,
+      exit_price NUMERIC(18, 8) NOT NULL,
+      size NUMERIC(18, 8) NOT NULL,
+      orthrus_cost NUMERIC(18, 8),
+      hydra_cost NUMERIC(18, 8),
+      sisyphus_cost NUMERIC(18, 8),
+      decision_type TEXT NOT NULL,
+      reason_text TEXT,
+      calculated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+  `);
+
+  await pool.query(`
+    CREATE INDEX IF NOT EXISTS idx_emotional_decisions_member_id
+    ON emotional_decisions(member_id)
   `);
 
   await seedTestnetConnector();
